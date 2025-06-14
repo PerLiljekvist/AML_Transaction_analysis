@@ -119,53 +119,65 @@ def detect_fan_out_patterns(df, time_freq='10min', z_threshold=3):
     
     return suspicious
 
-import pandas as pd
-from scipy import stats
-
-def detect_fan_out_groups(df, time_freq='1H', outlier_method='percentile', threshold=95):
+def preprocess_and_group(df, time_freq='1H'):
     """
-    Groups transactions by source account and time window.
-    Flags outliers using z-score or percentile.
+    Preprocesses the dataframe and groups by source account and time window.
     
     Args:
-        df (pd.DataFrame): Your transaction data.
+        df (pd.DataFrame): Transaction data.
         time_freq (str): Time window for grouping (e.g., '1H', '30min', '1D').
-        outlier_method (str): 'zscore' or 'percentile'.
-        threshold (float): For 'zscore', the z-score threshold; for 'percentile', the percentile (e.g., 95).
     
     Returns:
-        pd.DataFrame: Aggregated groups with outlier flags.
+        pd.DataFrame: Aggregated groups.
     """
-    # Ensure timestamp is datetime
     df['Timestamp'] = pd.to_datetime(df['Timestamp'])
-    
-    # Create unique destination account identifier
     df['Dest_Account'] = df['To Bank'].astype(str) + '_' + df['Account.1'].astype(str)
-    
-    # Group by source account and time window
     grouped = df.groupby(
         ['From Bank', 'Account', pd.Grouper(key='Timestamp', freq=time_freq)]
     ).agg(
         unique_recipients=('Dest_Account', 'nunique'),
         total_amount=('Amount Received', 'sum')
     ).reset_index()
-    
-    # Flag outliers
-    if outlier_method == 'zscore':
-        grouped['z_score'] = stats.zscore(grouped['unique_recipients'])
-        grouped['is_outlier'] = grouped['z_score'] > threshold
-    elif outlier_method == 'percentile':
-        threshold_value = grouped['unique_recipients'].quantile(threshold/100)
-        grouped['is_outlier'] = grouped['unique_recipients'] > threshold_value
-    
     return grouped
 
+def detect_fan_out_groups_zscore(df, time_freq='1H', threshold=3):
+    """
+    Groups transactions and flags outliers using z-score method.
+    
+    Args:
+        df (pd.DataFrame): Transaction data.
+        time_freq (str): Time window for grouping.
+        threshold (float): Z-score threshold for outlier detection.
+    
+    Returns:
+        pd.DataFrame: Aggregated groups with outlier flags.
+    """
+    grouped = preprocess_and_group(df, time_freq)
+    grouped['z_score'] = stats.zscore(grouped['unique_recipients'])
+    grouped['is_outlier'] = grouped['z_score'] > threshold
+    return grouped
 
+def detect_fan_out_groups_percentile(df, time_freq='1H', threshold=95):
+    """
+    Groups transactions and flags outliers using percentile method.
+    
+    Args:
+        df (pd.DataFrame): Transaction data.
+        time_freq (str): Time window for grouping.
+        threshold (float): Percentile threshold (e.g., 95).
+    
+    Returns:
+        pd.DataFrame: Aggregated groups with outlier flags.
+    """
+    grouped = preprocess_and_group(df, time_freq)
+    threshold_value = grouped['unique_recipients'].quantile(threshold/100)
+    grouped['is_outlier'] = grouped['unique_recipients'] > threshold_value
+    return grouped
 #################################Function calls##############################################
 
 #df = get_file_head_as_df(filePath, n=10, encoding='utf-8')
 
-df = read_csv_custom(filePath, nrows=50000)
+
 #print(df)
                 
 #Detect suspicious patterns
@@ -174,12 +186,26 @@ df = read_csv_custom(filePath, nrows=50000)
 # print(suspicious[['From Bank', 'Account', 'Timestamp', 'unique_recipients', 'z_score']])
 
 # View suspicious groups
-# Example usage
-fan_out = detect_fan_out_groups(df, time_freq='1H', outlier_method='percentile', threshold=98)
+# Example usages
+#fan_out = detect_fan_out_groups(df, time_freq='1H', outlier_method='zscore', threshold=2)
 
 # View suspicious groups
-suspicious = fan_out[fan_out['is_outlier']]
-print(suspicious[['From Bank', 'Account', 'Timestamp', 'unique_recipients', 'total_amount']])
+
+df = read_csv_custom(filePath, nrows=50000)
+
+z_score_result = detect_fan_out_groups_zscore(df, time_freq='1H', threshold=3)
+
+print("\nNumber of outliers detected (Z-score method):", z_score_result['is_outlier'].sum())
+print("\nZ-Score Method Results:")
+print(z_score_result.head())  
+
+# percentile_result = detect_fan_out_groups_percentile(df, time_freq='1H', threshold=95)
+
+#print("Number of outliers detected (Percentile method):", percentile_result['is_outlier'].sum())
+# print("\nPercentile Method Results:")
+# print(percentile_result.head()) 
+
+
 
 
 
