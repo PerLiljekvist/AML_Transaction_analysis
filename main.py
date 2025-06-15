@@ -3,6 +3,10 @@ import csv
 import networkx as nx
 from scipy import stats
 from datetime import datetime
+import seaborn as sns
+import matplotlib.pyplot as plt
+import io
+import os
 
 filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.csv"
 
@@ -24,7 +28,7 @@ def make_df_from_file(file_path, column_name):
             if i + 1 >= n:
                 break
     return lines
-
+''
 def get_file_head_as_df(file_path, n=250, encoding='utf-8'):
     """
     Returns the first n lines of a file as a pandas DataFrame.
@@ -173,6 +177,43 @@ def detect_fan_out_groups_percentile(df, time_freq='1H', threshold=95):
     threshold_value = grouped['unique_recipients'].quantile(threshold/100)
     grouped['is_outlier'] = grouped['unique_recipients'] > threshold_value
     return grouped
+
+def plot_group_distributions(grouped_df):
+    """
+    Plots histograms and boxplots for unique_recipients and total_amount distributions.
+    
+    Args:
+        grouped_df (pd.DataFrame): Output dataframe from preprocess_and_group
+    """
+    plt.figure(figsize=(14, 10))
+    
+    # Unique Recipients plots
+    plt.subplot(2, 2, 1)
+    sns.histplot(grouped_df['unique_recipients'], kde=True, bins=30, color='blue')
+    plt.title('Unique Recipients Distribution')
+    plt.xlabel('Unique Recipients per Group')
+    
+    plt.subplot(2, 2, 2)
+    sns.boxplot(x=grouped_df['unique_recipients'], color='blue')
+    plt.title('Unique Recipients Spread')
+    
+    # Total Amount plots
+    plt.subplot(2, 2, 3)
+    sns.histplot(grouped_df['total_amount'], kde=True, bins=30, color='green')
+    plt.title('Total Amount Distribution')
+    plt.xlabel('Total Amount per Group')
+    
+    plt.subplot(2, 2, 4)
+    sns.boxplot(x=grouped_df['total_amount'], color='green')
+    plt.title('Total Amount Spread')
+    
+    plt.tight_layout()
+    plt.show()
+
+def save_df_to_csv(df, file_name, file_path, index=False):
+   
+    full_path = os.path.join(file_path, file_name)
+    df.to_csv(full_path, index=index)
 #################################Function calls##############################################
 
 #df = get_file_head_as_df(filePath, n=10, encoding='utf-8')
@@ -191,17 +232,25 @@ def detect_fan_out_groups_percentile(df, time_freq='1H', threshold=95):
 
 # View suspicious groups
 
-df = read_csv_custom(filePath, nrows=50000)
+df = read_csv_custom(filePath, nrows=10000)
 
-z_score_result = detect_fan_out_groups_zscore(df, time_freq='1H', threshold=3)
+#grouped_df = preprocess_and_group(df, time_freq='1H')
 
-print("\nNumber of outliers detected (Z-score method):", z_score_result['is_outlier'].sum())
-print("\nZ-Score Method Results:")
-print(z_score_result.head())  
+#plot_group_distributions(grouped_df)
+
+# save_df_to_csv(grouped_df,"grouped_df.csv", "/Users/perliljekvist/Documents/Python/IBM AML/Data/")
+# print("ok!")
+
+
+#z_score_result = detect_fan_out_groups_zscore(df, time_freq='1H', threshold=3)
+
+# print("\nNumber of outliers detected (Z-score method):", z_score_result['is_outlier'].sum())
+# print("\nZ-Score Method Results:")
+# print(z_score_result.head())  
 
 # percentile_result = detect_fan_out_groups_percentile(df, time_freq='1H', threshold=95)
 
-#print("Number of outliers detected (Percentile method):", percentile_result['is_outlier'].sum())
+# print("Number of outliers detected (Percentile method):", percentile_result['is_outlier'].sum())
 # print("\nPercentile Method Results:")
 # print(percentile_result.head()) 
 
