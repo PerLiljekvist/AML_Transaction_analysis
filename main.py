@@ -8,8 +8,6 @@ import matplotlib.pyplot as plt
 import io
 import os
 
-filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.csv"
-
 def make_df_from_file(file_path, column_name):
     df = pd.read_csv(file_path, sep=';')
     df.set_index(list(df)[0])
@@ -214,10 +212,21 @@ def save_df_to_csv(df, file_name, file_path, index=False):
    
     full_path = os.path.join(file_path, file_name)
     df.to_csv(full_path, index=index)
+
+
 #################################Function calls##############################################
+filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.csv"
+folderPath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/"
+
+df = read_csv_custom(filePath, nrows=200000)
+
+grouped_df = preprocess_and_group(df, time_freq='10H')
+grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 3)
+grouped_df = grouped_df.dropna(how='all') 
+
+save_df_to_csv(grouped_df, "forocular.csv", folderPath)
 
 #df = get_file_head_as_df(filePath, n=10, encoding='utf-8')
-
 
 #print(df)
                 
@@ -231,10 +240,6 @@ def save_df_to_csv(df, file_name, file_path, index=False):
 #fan_out = detect_fan_out_groups(df, time_freq='1H', outlier_method='zscore', threshold=2)
 
 # View suspicious groups
-
-df = read_csv_custom(filePath, nrows=10000)
-
-#grouped_df = preprocess_and_group(df, time_freq='1H')
 
 #plot_group_distributions(grouped_df)
 
