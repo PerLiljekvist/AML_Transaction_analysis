@@ -218,49 +218,35 @@ def save_df_to_csv(df, file_name, file_path, index=False):
 filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.csv"
 folderPath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/"
 
-df = read_csv_custom(filePath, nrows=200000)
-df = (df.where(df['Account'] =='1004286A8').dropna(how='all'))
-save_df_to_csv(df, "account_with_many_transactions.csv", folderPath)
-print("ok!")
+df = read_csv_custom(filePath, nrows=100000)
+           
+#Detect suspicious patterns z-score based
+# grouped_df = preprocess_and_group(df, time_freq='1H')
+# suspicious = detect_fan_out_patterns(df, time_freq='1H', z_threshold=3)
+# print(f"Found {len(suspicious)} suspicious patterns")
+# print(suspicious[['From Bank', 'Account', 'Timestamp', 'unique_recipients', 'z_score']])
+
+#Detect suspicious patterns percentile based
+grouped_df = preprocess_and_group(df, time_freq='1H')
+percentile_result = detect_fan_out_groups_percentile(df, time_freq='1H', threshold=95)
+print("Number of outliers detected (Percentile method):", percentile_result['is_outlier'].sum())
+print("\nPercentile Method Results:")
+print(percentile_result.head()) 
+
+
+############################ generic helping hand code ###################################
+# df = (df.where(df['Account'] =='1004286A8').dropna(how='all'))
+# save_df_to_csv(df, "account_with_many_transactions.csv", folderPath)
+
+
+# save_df_to_csv(grouped_df, "forocular.csv", folderPath)
+#df = get_file_head_as_df(filePath, n=10, encoding='utf-8')
 
 # grouped_df = preprocess_and_group(df, time_freq='10H')
 # grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 3)
 # grouped_df = grouped_df.dropna(how='all') 
 
-# save_df_to_csv(grouped_df, "forocular.csv", folderPath)
 
-#df = get_file_head_as_df(filePath, n=10, encoding='utf-8')
-
-#print(df)
-                
-#Detect suspicious patterns
-# suspicious = detect_fan_out_patterns(df)
-# print(f"Found {len(suspicious)} suspicious patterns")
-# print(suspicious[['From Bank', 'Account', 'Timestamp', 'unique_recipients', 'z_score']])
-
-# View suspicious groups
-# Example usages
-#fan_out = detect_fan_out_groups(df, time_freq='1H', outlier_method='zscore', threshold=2)
-
-# View suspicious groups
-
-#plot_group_distributions(grouped_df)
-
-# save_df_to_csv(grouped_df,"grouped_df.csv", "/Users/perliljekvist/Documents/Python/IBM AML/Data/")
-# print("ok!")
-
-
-#z_score_result = detect_fan_out_groups_zscore(df, time_freq='1H', threshold=3)
-
-# print("\nNumber of outliers detected (Z-score method):", z_score_result['is_outlier'].sum())
-# print("\nZ-Score Method Results:")
-# print(z_score_result.head())  
-
-# percentile_result = detect_fan_out_groups_percentile(df, time_freq='1H', threshold=95)
-
-# print("Number of outliers detected (Percentile method):", percentile_result['is_outlier'].sum())
-# print("\nPercentile Method Results:")
-# print(percentile_result.head()) 
 
 
 
