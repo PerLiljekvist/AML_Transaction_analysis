@@ -219,12 +219,15 @@ filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.cs
 folderPath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/"
 
 df = read_csv_custom(filePath, nrows=200000)
+df = (df.where(df['Account'] =='1004286A8').dropna(how='all'))
+save_df_to_csv(df, "account_with_many_transactions.csv", folderPath)
+print("ok!")
 
-grouped_df = preprocess_and_group(df, time_freq='10H')
-grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 3)
-grouped_df = grouped_df.dropna(how='all') 
+# grouped_df = preprocess_and_group(df, time_freq='10H')
+# grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 3)
+# grouped_df = grouped_df.dropna(how='all') 
 
-save_df_to_csv(grouped_df, "forocular.csv", folderPath)
+# save_df_to_csv(grouped_df, "forocular.csv", folderPath)
 
 #df = get_file_head_as_df(filePath, n=10, encoding='utf-8')
 
