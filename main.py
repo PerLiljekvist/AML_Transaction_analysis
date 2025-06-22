@@ -221,14 +221,12 @@ folderPath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/"
 df = read_csv_custom(filePath, nrows=100000)
            
 #Detect suspicious patterns z-score based
-# grouped_df = preprocess_and_group(df, time_freq='1H')
 # suspicious = detect_fan_out_patterns(df, time_freq='1H', z_threshold=3)
 # print(f"Found {len(suspicious)} suspicious patterns")
 # print(suspicious[['From Bank', 'Account', 'Timestamp', 'unique_recipients', 'z_score']])
 
 #Detect suspicious patterns percentile based
-grouped_df = preprocess_and_group(df, time_freq='1H')
-percentile_result = detect_fan_out_groups_percentile(df, time_freq='1H', threshold=95)
+percentile_result = detect_fan_out_groups_percentile(df, time_freq='5H', threshold=95)
 print("Number of outliers detected (Percentile method):", percentile_result['is_outlier'].sum())
 print("\nPercentile Method Results:")
 print(percentile_result.head()) 
