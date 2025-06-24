@@ -142,6 +142,34 @@ def preprocess_and_group(df, time_freq='1H'):
     ).reset_index()
     return grouped
 
+def plot_unique_recipient_histogram(df, account_col='Account', recipient_col='unique_recipients'):
+    """
+    Plots a histogram showing the distribution of how many accounts have 1, 2, 3, ... unique recipients.
+
+    Parameters:
+        df (pd.DataFrame): DataFrame with at least 'account' and 'unique_recipient' columns.
+        account_col (str): Name of the column containing account identifiers.
+        recipient_col (str): Name of the column containing unique recipient identifiers.
+    """
+    # If recipient_col is not present, assume each row is a unique recipient for the account
+    # If you want to count unique recipients per account, use groupby and nunique
+    # (but your sample data already has a 'unique_recipient' column, perhaps as a count)
+    # If you want to use the column as-is:
+    unique_recipient_counts = df.groupby(account_col)[recipient_col].max().value_counts().sort_index()
+    # Or, if you want to actually count unique recipients (replace above with):
+    # unique_recipient_counts = df.groupby(account_col)[recipient_col].nunique().value_counts().sort_index()
+    # (but your data suggests recipient_col is already the count per account)
+
+    print(unique_recipient_counts)
+
+    plt.figure(figsize=(10, 6))
+    unique_recipient_counts.plot(kind='bar', color='blue', edgecolor='black')
+    plt.title('Distribution of Accounts by Number of Unique Recipients')
+    plt.xlabel('Number of Unique Recipients per Account')
+    plt.ylabel('Number of Accounts')
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
 def detect_fan_out_groups_zscore(df, time_freq='1H', threshold=3):
     """
     Groups transactions and flags outliers using z-score method.
@@ -219,17 +247,22 @@ filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.cs
 folderPath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/"
 
 df = read_csv_custom(filePath, nrows=100000)
-           
-#Detect suspicious patterns z-score based
+
+# Check distribution: Source account -> nof destination accounts before choosing method of detection
+grouped_df = preprocess_and_group(df,'1min')
+plot_unique_recipient_histogram(grouped_df)
+#plot_group_distributions(grouped_df)
+          
+#Detect suspicious patterns z-score based. No suitable for non-Gaussian distributed data 
 # suspicious = detect_fan_out_patterns(df, time_freq='1H', z_threshold=3)
 # print(f"Found {len(suspicious)} suspicious patterns")
 # print(suspicious[['From Bank', 'Account', 'Timestamp', 'unique_recipients', 'z_score']])
 
-#Detect suspicious patterns percentile based
-percentile_result = detect_fan_out_groups_percentile(df, time_freq='5H', threshold=95)
-print("Number of outliers detected (Percentile method):", percentile_result['is_outlier'].sum())
-print("\nPercentile Method Results:")
-print(percentile_result.head()) 
+#Detect suspicious patterns percentile based. Performs better on non-Gaussion distributed data. 
+# percentile_result = detect_fan_out_groups_percentile(df, time_freq='5H', threshold=95)
+# print("Number of outliers detected (Percentile method):", percentile_result['is_outlier'].sum())
+# print("\nPercentile Method Results:")
+# print(percentile_result.head()) 
 
 
 ############################ generic helping hand code ###################################
