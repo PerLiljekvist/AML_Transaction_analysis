@@ -241,16 +241,15 @@ def save_df_to_csv(df, file_name, file_path, index=False):
     full_path = os.path.join(file_path, file_name)
     df.to_csv(full_path, index=index)
 
-
 #################################Function calls##############################################
 filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.csv"
 folderPath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/"
 
-df = read_csv_custom(filePath, nrows=100000)
+df = read_csv_custom(filePath, nrows=20000)
+grouped_df = preprocess_and_group(df,'48H')
 
 # Check distribution: Source account -> nof destination accounts before choosing method of detection
-grouped_df = preprocess_and_group(df,'1min')
-plot_unique_recipient_histogram(grouped_df)
+#plot_unique_recipient_histogram(grouped_df.where(grouped_df['unique_recipients'] > 1))
 #plot_group_distributions(grouped_df)
           
 #Detect suspicious patterns z-score based. No suitable for non-Gaussian distributed data 
@@ -259,15 +258,15 @@ plot_unique_recipient_histogram(grouped_df)
 # print(suspicious[['From Bank', 'Account', 'Timestamp', 'unique_recipients', 'z_score']])
 
 #Detect suspicious patterns percentile based. Performs better on non-Gaussion distributed data. 
-# percentile_result = detect_fan_out_groups_percentile(df, time_freq='5H', threshold=95)
-# print("Number of outliers detected (Percentile method):", percentile_result['is_outlier'].sum())
-# print("\nPercentile Method Results:")
-# print(percentile_result.head()) 
+percentile_result = detect_fan_out_groups_percentile(df, time_freq='1min', threshold=99.9)
+print("Number of outliers detected (Percentile method):", percentile_result['is_outlier'].sum())
+print("\nPercentile Method Results:")
+print(percentile_result.head()) 
 
-
-############################ generic helping hand code ###################################
+############################ generic micsh helping hand code ###################################
 # df = (df.where(df['Account'] =='1004286A8').dropna(how='all'))
 # save_df_to_csv(df, "account_with_many_transactions.csv", folderPath)
+#save_df_to_csv(percentile_result, "percentile_test", folderPath, index=False)
 
 
 # save_df_to_csv(grouped_df, "forocular.csv", folderPath)
