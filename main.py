@@ -245,7 +245,7 @@ def save_df_to_csv(df, file_name, file_path, index=False):
 filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.csv"
 folderPath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/"
 
-df = read_csv_custom(filePath, nrows=20000)
+df = read_csv_custom(filePath, nrows=200000)
 grouped_df = preprocess_and_group(df,'48H')
 
 # Check distribution: Source account -> nof destination accounts before choosing method of detection
@@ -258,10 +258,13 @@ grouped_df = preprocess_and_group(df,'48H')
 # print(suspicious[['From Bank', 'Account', 'Timestamp', 'unique_recipients', 'z_score']])
 
 #Detect suspicious patterns percentile based. Performs better on non-Gaussion distributed data. 
-percentile_result = detect_fan_out_groups_percentile(df, time_freq='1min', threshold=99.9)
-print("Number of outliers detected (Percentile method):", percentile_result['is_outlier'].sum())
+df = detect_fan_out_groups_percentile(df, time_freq='1min', threshold=99.9)
+df = df.where(df.is_outlier == True)
+df = df.dropna(how='all') 
+print("Number of outliers detected (Percentile method):", df['is_outlier'].sum())
 print("\nPercentile Method Results:")
-print(percentile_result.head()) 
+print(df.head()) 
+save_df_to_csv(df, "percentile_result.csv", folderPath)
 
 ############################ generic micsh helping hand code ###################################
 # df = (df.where(df['Account'] =='1004286A8').dropna(how='all'))
