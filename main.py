@@ -204,6 +204,109 @@ def detect_fan_out_groups_percentile(df, time_freq='1H', threshold=95):
     grouped['is_outlier'] = grouped['unique_recipients'] > threshold_value
     return grouped
 
+
+    """
+    Detects fan-in AML patterns using percentile on unique senders per receiver per day.
+    
+    Parameters:
+        df (pd.DataFrame): DataFrame with columns:
+            ['Timestamp', 'From Bank', 'Account', 'To Bank', 'Account.1', ...]
+        threshold (float): Percentile threshold for flagging anomalies
+    
+    Returns:
+        pd.DataFrame: Original DataFrame with added 'Is_Fan_In_P' flag column
+    """
+    # Create copy to avoid SettingWithCopyWarning
+    df = df.copy()
+    
+    # Convert timestamp and extract date
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+    df['Date'] = df['Timestamp'].dt.floor('D')
+    
+    # Create composite keys
+    df['Sender_Key'] = df['From Bank'].astype(str) + '_' + df['Account'].astype(str)
+    df['Receiver_Key'] = df['To Bank'].astype(str) + '_' + df['Account.1'].astype(str)
+    
+    # Count unique senders per receiver per day
+    group = df.groupby(['Receiver_Key', 'Date'])['Sender_Key'].nunique().reset_index(name='Unique_Senders')
+    
+    # Calculate percentile per receiver
+    group['percentile'] = group.groupby('Receiver_Key')['Unique_Senders'].transform(
+        lambda x: (x.rank(method='max') / len(x) * 100)
+    )
+    group['Is_Fan_In_P'] = group['percentile'] > threshold
+    
+    # Merge flags back to original DataFrame
+    result = df.merge(
+        group[['Receiver_Key', 'Date', 'Is_Fan_In_P']],
+        on=['Receiver_Key', 'Date'],
+        how='left'
+    ).fillna(False)
+    
+    # Cleanup temporary columns
+    return result.drop(columns=['Sender_Key', 'Receiver_Key'], errors='ignore')
+
+#fan-in
+
+def preprocess_and_group_fan_in(df, time_freq='1H'):
+    """
+    Preprocesses transaction data for fan-in detection by grouping incoming transactions.
+    
+    Args:
+        df (pd.DataFrame): Transaction data with 'Timestamp' and 'Account.1' (receiver)
+        time_freq (str): Time window for grouping (default: '1H')
+    
+    Returns:
+        pd.DataFrame: Aggregated data with unique senders and total received amount per receiver
+    """
+    df = df.copy()
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+    df.set_index('Timestamp', inplace=True)
+    
+    # Group by time window and receiving account
+    grouped = df.groupby([pd.Grouper(freq=time_freq), 'Account.1']).agg(
+    unique_senders=('Account', 'nunique'),
+    total_received=('Amount Received', 'sum'),
+    transaction_count=('Amount Received', 'count')
+).reset_index()
+    
+    return grouped
+
+def detect_fan_in_groups_zscore(df, time_freq='1H', threshold=3):
+    """
+    Flags fan-in AML patterns using z-score outlier detection on unique senders.
+    
+    Args:
+        df (pd.DataFrame): Transaction data
+        time_freq (str): Time window for grouping
+        threshold (float): Z-score cutoff for outliers
+    
+    Returns:
+        pd.DataFrame: Aggregated groups with outlier flags
+    """
+    grouped = preprocess_and_group_fan_in(df, time_freq)
+    grouped['z_score'] = stats.zscore(grouped['unique_senders'])
+    grouped['is_outlier'] = grouped['z_score'] > threshold
+    return grouped
+
+def simple_fan_in_report(suspicious_df):
+    print("\n" + "="*50)
+    print("SIMPLE FAN-IN AML REPORT")
+    print("="*50)
+    print(f"Number of suspicious fan-in groups: {len(suspicious_df)}")
+    
+    # Filter for groups with more than one unique sender
+    multi_sender_df = suspicious_df[suspicious_df['unique_senders'] > 1]
+    print(f"Number of groups with >1 unique sender: {len(multi_sender_df)}")
+    
+    print("\nPreview of suspicious entries (showing unique_senders):")
+    if not multi_sender_df.empty:
+        print(multi_sender_df[['Timestamp', 'Account.1', 'unique_senders', 'transaction_count', 'total_received']].head(5))
+    else:
+        print("No suspicious groups with more than one unique sender.")
+    
+    print("="*50)
+
 def plot_group_distributions(grouped_df):
     """
     Plots histograms and boxplots for unique_recipients and total_amount distributions.
@@ -245,8 +348,14 @@ def save_df_to_csv(df, file_name, file_path, index=False):
 filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.csv"
 folderPath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/"
 
-df = read_csv_custom(filePath, nrows=200000)
-grouped_df = preprocess_and_group(df,'48H')
+df = read_csv_custom(filePath, nrows=50000)
+
+results = detect_fan_in_groups_zscore(df, time_freq='1H', threshold=3)
+
+# Filter flagged transactions
+suspicious = results[results['is_outlier']]
+
+simple_fan_in_report(results)
 
 # Check distribution: Source account -> nof destination accounts before choosing method of detection
 #plot_unique_recipient_histogram(grouped_df.where(grouped_df['unique_recipients'] > 1))
@@ -258,13 +367,13 @@ grouped_df = preprocess_and_group(df,'48H')
 # print(suspicious[['From Bank', 'Account', 'Timestamp', 'unique_recipients', 'z_score']])
 
 #Detect suspicious patterns percentile based. Performs better on non-Gaussion distributed data. 
-df = detect_fan_out_groups_percentile(df, time_freq='1min', threshold=99.9)
-df = df.where(df.is_outlier == True)
-df = df.dropna(how='all') 
-print("Number of outliers detected (Percentile method):", df['is_outlier'].sum())
-print("\nPercentile Method Results:")
-print(df.head()) 
-save_df_to_csv(df, "percentile_result.csv", folderPath)
+# df = detect_fan_out_groups_percentile(df, time_freq='1min', threshold=99.9)
+# df = df.where(df.is_outlier == True)
+# df = df.dropna(how='all') 
+# print("Number of outliers detected (Percentile method):", df['is_outlier'].sum())
+# print("\nPercentile Method Results:")
+# print(df.head()) 
+# save_df_to_csv(df, "percentile_result.csv", folderPath)
 
 ############################ generic micsh helping hand code ###################################
 # df = (df.where(df['Account'] =='1004286A8').dropna(how='all'))
