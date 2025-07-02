@@ -7,6 +7,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import io
 import os
+import numpy as np
+
+#hhelp functions 
 
 def make_df_from_file(file_path, column_name):
     df = pd.read_csv(file_path, sep=';')
@@ -26,7 +29,7 @@ def make_df_from_file(file_path, column_name):
             if i + 1 >= n:
                 break
     return lines
-''
+
 def get_file_head_as_df(file_path, n=250, encoding='utf-8'):
     """
     Returns the first n lines of a file as a pandas DataFrame.
@@ -81,6 +84,45 @@ def read_csv_custom(filepath, nrows=None, sep=None):
             pass
 
     return df
+
+def plot_group_distributions(grouped_df):
+    """
+    Plots histograms and boxplots for unique_recipients and total_amount distributions.
+    
+    Args:
+        grouped_df (pd.DataFrame): Output dataframe from preprocess_and_group
+    """
+    plt.figure(figsize=(14, 10))
+    
+    # Unique Recipients plots
+    plt.subplot(2, 2, 1)
+    sns.histplot(grouped_df['unique_recipients'], kde=True, bins=30, color='blue')
+    plt.title('Unique Recipients Distribution')
+    plt.xlabel('Unique Recipients per Group')
+    
+    plt.subplot(2, 2, 2)
+    sns.boxplot(x=grouped_df['unique_recipients'], color='blue')
+    plt.title('Unique Recipients Spread')
+    
+    # Total Amount plots
+    plt.subplot(2, 2, 3)
+    sns.histplot(grouped_df['total_amount'], kde=True, bins=30, color='green')
+    plt.title('Total Amount Distribution')
+    plt.xlabel('Total Amount per Group')
+    
+    plt.subplot(2, 2, 4)
+    sns.boxplot(x=grouped_df['total_amount'], color='green')
+    plt.title('Total Amount Spread')
+    
+    plt.tight_layout()
+    plt.show()
+
+def save_df_to_csv(df, file_name, file_path, index=False):
+   
+    full_path = os.path.join(file_path, file_name)
+    df.to_csv(full_path, index=index)
+
+#fan-out
 
 def detect_fan_out_patterns(df, time_freq='10min', z_threshold=3):
     """
@@ -307,55 +349,105 @@ def simple_fan_in_report(suspicious_df):
     
     print("="*50)
 
-def plot_group_distributions(grouped_df):
-    """
-    Plots histograms and boxplots for unique_recipients and total_amount distributions.
-    
-    Args:
-        grouped_df (pd.DataFrame): Output dataframe from preprocess_and_group
-    """
-    plt.figure(figsize=(14, 10))
-    
-    # Unique Recipients plots
-    plt.subplot(2, 2, 1)
-    sns.histplot(grouped_df['unique_recipients'], kde=True, bins=30, color='blue')
-    plt.title('Unique Recipients Distribution')
-    plt.xlabel('Unique Recipients per Group')
-    
-    plt.subplot(2, 2, 2)
-    sns.boxplot(x=grouped_df['unique_recipients'], color='blue')
-    plt.title('Unique Recipients Spread')
-    
-    # Total Amount plots
-    plt.subplot(2, 2, 3)
-    sns.histplot(grouped_df['total_amount'], kde=True, bins=30, color='green')
-    plt.title('Total Amount Distribution')
-    plt.xlabel('Total Amount per Group')
-    
-    plt.subplot(2, 2, 4)
-    sns.boxplot(x=grouped_df['total_amount'], color='green')
-    plt.title('Total Amount Spread')
-    
-    plt.tight_layout()
-    plt.show()
+#scatter-gather
 
-def save_df_to_csv(df, file_name, file_path, index=False):
-   
-    full_path = os.path.join(file_path, file_name)
-    df.to_csv(full_path, index=index)
+def preprocess_transactions(df):
+    # Standardize column names
+    df.columns = [col.strip().replace(' ', '_') for col in df.columns]
+    # Ensure correct data types
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+    df['Amount_Received'] = pd.to_numeric(df['Amount_Received'], errors='coerce')
+    df['Amount_Paid'] = pd.to_numeric(df['Amount_Paid'], errors='coerce')
+    return df
+
+def detect_scatter_gather(df, percentile=95):
+    # Scatter: Accounts sending to many unique recipients
+    scatter_counts = df.groupby('Account')['Account.1'].nunique()
+    scatter_threshold = np.percentile(scatter_counts, percentile)
+    scatter_accounts = scatter_counts[scatter_counts >= scatter_threshold].index.tolist()
+
+    # Gather: Accounts receiving from many unique senders
+    gather_counts = df.groupby('Account.1')['Account'].nunique()
+    gather_threshold = np.percentile(gather_counts, percentile)
+    gather_accounts = gather_counts[gather_counts >= gather_threshold].index.tolist()
+
+    # Find suspicious transactions
+    suspicious = df[
+        (df['Account'].isin(scatter_accounts)) |
+        (df['Account.1'].isin(gather_accounts))
+    ]
+    return suspicious, scatter_accounts, gather_accounts, scatter_threshold, gather_threshold
+
+def print_report(suspicious, scatter_accounts, gather_accounts, scatter_threshold, gather_threshold):
+    print(f"\n--- Scatter-Gather Money Laundering Detection Report ---")
+    print(f"Scatter threshold (unique recipients per sender): {scatter_threshold:.2f}")
+    print(f"Gather threshold (unique senders per recipient): {gather_threshold:.2f}")
+    print(f"Number of suspicious transactions found: {len(suspicious)}\n")
+    print(f"Accounts flagged as scatterers (sending to many): {scatter_accounts}")
+    print(f"Accounts flagged as gatherers (receiving from many): {gather_accounts}\n")
+    print("Suspicious transactions:")
+    #print(suspicious.to_string(index=False))
+
+def detect_scatter_gather_money_laundering(df, percentile=95):
+    df = preprocess_transactions(df)
+    suspicious, scatter_accounts, gather_accounts, scatter_threshold, gather_threshold = detect_scatter_gather(df, percentile)
+    print_report(suspicious, scatter_accounts, gather_accounts, scatter_threshold, gather_threshold)
+
+#gather-scatter
+
+def preprocess_transactions(df):
+    df.columns = [col.strip().replace(' ', '_') for col in df.columns]
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+    df['Amount_Received'] = pd.to_numeric(df['Amount_Received'], errors='coerce')
+    df['Amount_Paid'] = pd.to_numeric(df['Amount_Paid'], errors='coerce')
+    return df
+
+def detect_gather_scatter(df, percentile=95):
+    # Gather: Accounts that receive from many unique senders
+    gather_counts = df.groupby('Account.1')['Account'].nunique()
+    gather_threshold = np.percentile(gather_counts, percentile)
+    gather_accounts = gather_counts[gather_counts >= gather_threshold].index.tolist()
+    
+    # Scatter: Of those, which send to many unique recipients
+    scatter_counts = df[df['Account'].isin(gather_accounts)].groupby('Account')['Account.1'].nunique()
+    scatter_threshold = np.percentile(scatter_counts, percentile)
+    gather_scatter_accounts = scatter_counts[scatter_counts >= scatter_threshold].index.tolist()
+    
+    # Find suspicious transactions: incoming and outgoing for these accounts
+    suspicious_in = df[df['Account.1'].isin(gather_scatter_accounts)]
+    suspicious_out = df[df['Account'].isin(gather_scatter_accounts)]
+    suspicious = pd.concat([suspicious_in, suspicious_out]).drop_duplicates()
+    
+    return suspicious, gather_scatter_accounts, gather_threshold, scatter_threshold
+
+def print_gather_scatter_report(suspicious, gather_scatter_accounts, gather_threshold, scatter_threshold):
+    print(f"\n--- Gather-Scatter Money Laundering Detection Report ---")
+    print(f"Gather threshold (unique senders per recipient): {gather_threshold:.2f}")
+    print(f"Scatter threshold (unique recipients per sender): {scatter_threshold:.2f}")
+    print(f"Number of suspicious transactions found: {len(suspicious)}\n")
+    print(f"Accounts flagged as gather-scatter (central node): {gather_scatter_accounts}\n")
+    print("Suspicious transactions:")
+    #print(suspicious.to_string(index=False))
+
+def detect_gather_scatter_money_laundering(df, percentile=95):
+    df = preprocess_transactions(df)
+    suspicious, gather_scatter_accounts, gather_threshold, scatter_threshold = detect_gather_scatter(df, percentile)
+    print_gather_scatter_report(suspicious, gather_scatter_accounts, gather_threshold, scatter_threshold)
 
 #################################Function calls##############################################
 filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.csv"
 folderPath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/"
 
-df = read_csv_custom(filePath, nrows=50000)
+df = read_csv_custom(filePath, nrows=10000)
 
-results = detect_fan_in_groups_zscore(df, time_freq='1H', threshold=3)
+detect_gather_scatter_money_laundering(df, percentile=98)
+
+#results = detect_fan_in_groups_zscore(df, time_freq='1H', threshold=3)
 
 # Filter flagged transactions
-suspicious = results[results['is_outlier']]
+#suspicious = results[results['is_outlier']]
 
-simple_fan_in_report(results)
+#simple_fan_in_report(results)
 
 # Check distribution: Source account -> nof destination accounts before choosing method of detection
 #plot_unique_recipient_histogram(grouped_df.where(grouped_df['unique_recipients'] > 1))
