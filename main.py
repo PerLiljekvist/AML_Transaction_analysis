@@ -434,13 +434,43 @@ def detect_gather_scatter_money_laundering(df, percentile=95):
     suspicious, gather_scatter_accounts, gather_threshold, scatter_threshold = detect_gather_scatter(df, percentile)
     print_gather_scatter_report(suspicious, gather_scatter_accounts, gather_threshold, scatter_threshold)
 
+#create network files
+
+def export_gephi_files(df, output_dir):
+    """
+    Exports nodes and edges files for Gephi network analysis.
+
+    Parameters:
+    - df: pandas DataFrame with transaction data.
+    - output_dir: Path to the directory where files will be saved.
+    """
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Create nodes: unique accounts from both sender and receiver columns
+    accounts = pd.unique(df[['Account', 'Account.1']].values.ravel('K'))
+    nodes = pd.DataFrame({'Id': accounts})
+    nodes_path = os.path.join(output_dir, 'nodes.csv')
+    nodes.to_csv(nodes_path, index=False)
+
+    # Create edges: count number of transactions between each pair
+    edge_counts = df.groupby(['Account', 'Account.1']).size().reset_index(name='Weight')
+    edge_counts.columns = ['Source', 'Target', 'Weight']
+    edges_path = os.path.join(output_dir, 'edges_by_count.csv')
+    edge_counts.to_csv(edges_path, index=False)
+
+    print(f"Nodes file saved to: {nodes_path}")
+    print(f"Edges file saved to: {edges_path}")
+
 #################################Function calls##############################################
 filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.csv"
 folderPath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/"
 
 df = read_csv_custom(filePath, nrows=10000)
 
-detect_gather_scatter_money_laundering(df, percentile=98)
+export_gephi_files(df,folderPath)
+
+#detect_gather_scatter_money_laundering(df, percentile=98)
 
 #results = detect_fan_in_groups_zscore(df, time_freq='1H', threshold=3)
 
