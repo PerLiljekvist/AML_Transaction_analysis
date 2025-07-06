@@ -1,8 +1,6 @@
 import aml_functions as aml
 import helpers as helpers
-
-filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.csv"
-folderPath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/"
+from paths_and_stuff import *
 
 df = helpers.read_csv_custom(filePath, nrows=100000)
 
@@ -10,7 +8,6 @@ df = helpers.read_csv_custom(filePath, nrows=100000)
 grouped_df = aml.preprocess_and_group_fan_out(df, time_freq='10H')
 grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 2)
 grouped_df = grouped_df.dropna(how='all') 
-
 
 # Check distribution: fan-in
 grouped_df = aml.preprocess_and_group_fan_in(df, time_freq='10H')
