@@ -114,3 +114,116 @@ def save_df_to_csv(df, file_name, file_path, index=False):
    
     full_path = os.path.join(file_path, file_name)
     df.to_csv(full_path, index=index)
+
+def export_gephi_files(df, output_dir):
+    """
+    Exports nodes and edges files for Gephi network analysis.
+
+    Parameters:
+    - df: pandas DataFrame with transaction data.
+    - output_dir: Path to the directory where files will be saved.
+    """
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Create nodes: unique accounts from both sender and receiver columns
+    accounts = pd.unique(df[['Account', 'Account.1']].values.ravel('K'))
+    nodes = pd.DataFrame({'Id': accounts})
+    nodes_path = os.path.join(output_dir, 'nodes.csv')
+    nodes.to_csv(nodes_path, index=False)
+
+    # Create edges: count number of transactions between each pair
+    edge_counts = df.groupby(['Account', 'Account.1']).size().reset_index(name='Weight')
+    edge_counts.columns = ['Source', 'Target', 'Weight']
+    edges_path = os.path.join(output_dir, 'edges_by_count.csv')
+    edge_counts.to_csv(edges_path, index=False)
+
+    print(f"Nodes file saved to: {nodes_path}")
+    print(f"Edges file saved to: {edges_path}")
+
+def export_gephi_files_banks(
+    df: pd.DataFrame,
+    output_dir: str,
+    *,
+    from_bank_col: str = "From Bank",
+    to_bank_col: str = "To Bank",
+    from_acct_col: str = "Account",
+    to_acct_col: str = "Account.1",
+    amount_col: str = "Amount Paid",     # or "Amount Received" if you prefer
+):
+    """
+    Export Gephi-ready nodes and edges for a bank-level transaction network.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Transaction data containing at least the columns specified below.
+    output_dir : str
+        Directory in which ``nodes.csv`` and ``edges.csv`` are written.
+    from_bank_col, to_bank_col : str, default "From Bank", "To Bank"
+        Column names holding the sender / receiver bank identifiers.
+    from_acct_col, to_acct_col : str, default "Account", "Account.1"
+        Column names holding the sender / receiver account identifiers.
+    amount_col : str, default "Amount Paid"
+        Column whose numeric values represent the transaction amount.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    # --- Build the node list -------------------------------------------------
+    all_banks = pd.unique(df[[from_bank_col, to_bank_col]].values.ravel("K"))
+
+    # 1) How many *unique* accounts does each bank hold?
+    send_accts = (
+        df[[from_bank_col, from_acct_col]]
+        .rename(columns={from_bank_col: "Bank", from_acct_col: "Account"})
+        .drop_duplicates()
+    )
+    recv_accts = (
+        df[[to_bank_col, to_acct_col]]
+        .rename(columns={to_bank_col: "Bank", to_acct_col: "Account"})
+        .drop_duplicates()
+    )
+    acct_counts = (
+        pd.concat([send_accts, recv_accts], ignore_index=True)
+        .groupby("Bank")["Account"]
+        .nunique()
+    )
+
+    # 2) Total amount in which the bank is involved (incoming + outgoing)
+    amt_out = df.groupby(from_bank_col)[amount_col].sum()
+    amt_in  = df.groupby(to_bank_col)[amount_col].sum()
+    total_amt = amt_out.add(amt_in, fill_value=0)
+
+    nodes = (
+        pd.DataFrame({"Id": all_banks})
+        .assign(
+            Accounts=lambda x: x["Id"].map(acct_counts).fillna(0).astype(int),
+            TotalAmount=lambda x: x["Id"].map(total_amt).fillna(0),
+        )
+    )
+
+    # --- Build the edge list -------------------------------------------------
+    edges = (
+        df.groupby([from_bank_col, to_bank_col])
+        .agg(
+            Weight=("Timestamp", "size"),        # number of transactions
+            TotalAmount=(amount_col, "sum"),     # total value between the pair
+        )
+        .reset_index()
+        .rename(
+            columns={
+                from_bank_col: "Source",
+                to_bank_col: "Target",
+            }
+        )
+    )
+
+    # --- Export --------------------------------------------------------------
+    nodes_path = os.path.join(output_dir, "nodes.csv")
+    edges_path = os.path.join(output_dir, "edges.csv")
+
+    nodes.to_csv(nodes_path, index=False)
+    edges.to_csv(edges_path, index=False)
+
+    print(f"Nodes file saved to: {nodes_path}")
+    print(f"Edges file saved to: {edges_path}")

@@ -2,19 +2,23 @@ import aml_functions as aml
 import helpers as helpers
 from paths_and_stuff import *
 
-df = helpers.read_csv_custom(filePath, nrows=100000)
+df = helpers.read_csv_custom(filePath, nrows=200000)
+
+helpers.export_gephi_files_banks(df,folderPath)
+
+print("semms runnable at least!")
 
 # Check distribution: fan-out
-grouped_df = aml.preprocess_and_group_fan_out(df, time_freq='10H')
-grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 2)
-grouped_df = grouped_df.dropna(how='all') 
+# grouped_df = aml.preprocess_and_group_fan_out(df, time_freq='10H')
+# grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 2)
+# grouped_df = grouped_df.dropna(how='all') 
 
 # Check distribution: fan-in
-grouped_df = aml.preprocess_and_group_fan_in(df, time_freq='10H')
-grouped_df = grouped_df.where(grouped_df['unique_senders'] > 2)
-grouped_df = grouped_df.dropna(how='all')
+# grouped_df = aml.preprocess_and_group_fan_in(df, time_freq='10H')
+# grouped_df = grouped_df.where(grouped_df['unique_senders'] > 2)
+# grouped_df = grouped_df.dropna(how='all')
 
-print(grouped_df.head(10))
+# print(grouped_df.head(10))
 
 # Filter flagged transactions
 #suspicious = results[results['is_outlier']]
@@ -51,6 +55,9 @@ print(grouped_df.head(10))
 
 # save_df_to_csv(grouped_df, "forocular.csv", folderPath)
 #df = get_file_head_as_df(filePath, n=10, encoding='utf-8')
+
+
+
 
 
 
