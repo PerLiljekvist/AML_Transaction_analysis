@@ -10,6 +10,26 @@ import os
 import numpy as np
 
 #fan-out
+def preprocess_and_group_fan_out(df, time_freq='1H'):
+    """
+    Preprocesses the dataframe and groups by source account and time window.
+    
+    Args:
+        df (pd.DataFrame): Transaction data.
+        time_freq (str): Time window for grouping (e.g., '1H', '30min', '1D').
+    
+    Returns:
+        pd.DataFrame: Aggregated groups.
+    """
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+    df['Dest_Account'] = df['To Bank'].astype(str) + '_' + df['Account.1'].astype(str)
+    grouped = df.groupby(
+        ['From Bank', 'Account', pd.Grouper(key='Timestamp', freq=time_freq)]
+    ).agg(
+        unique_recipients=('Dest_Account', 'nunique'),
+        total_amount=('Amount Received', 'sum')
+    ).reset_index()
+    return grouped
 
 def detect_fan_out_patterns(df, time_freq='10min', z_threshold=3):
     """
@@ -49,27 +69,6 @@ def detect_fan_out_patterns(df, time_freq='10min', z_threshold=3):
     suspicious.sort_values('z_score', ascending=False, inplace=True)
     
     return suspicious
-
-def preprocess_and_group(df, time_freq='1H'):
-    """
-    Preprocesses the dataframe and groups by source account and time window.
-    
-    Args:
-        df (pd.DataFrame): Transaction data.
-        time_freq (str): Time window for grouping (e.g., '1H', '30min', '1D').
-    
-    Returns:
-        pd.DataFrame: Aggregated groups.
-    """
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'])
-    df['Dest_Account'] = df['To Bank'].astype(str) + '_' + df['Account.1'].astype(str)
-    grouped = df.groupby(
-        ['From Bank', 'Account', pd.Grouper(key='Timestamp', freq=time_freq)]
-    ).agg(
-        unique_recipients=('Dest_Account', 'nunique'),
-        total_amount=('Amount Received', 'sum')
-    ).reset_index()
-    return grouped
 
 def plot_unique_recipient_histogram(df, account_col='Account', recipient_col='unique_recipients'):
     """
@@ -111,7 +110,7 @@ def detect_fan_out_groups_zscore(df, time_freq='1H', threshold=3):
     Returns:
         pd.DataFrame: Aggregated groups with outlier flags.
     """
-    grouped = preprocess_and_group(df, time_freq)
+    grouped = preprocess_and_group_fan_out(df, time_freq)
     grouped['z_score'] = stats.zscore(grouped['unique_recipients'])
     grouped['is_outlier'] = grouped['z_score'] > threshold
     return grouped
@@ -128,7 +127,7 @@ def detect_fan_out_groups_percentile(df, time_freq='1H', threshold=95):
     Returns:
         pd.DataFrame: Aggregated groups with outlier flags.
     """
-    grouped = preprocess_and_group(df, time_freq)
+    grouped = preprocess_and_group_fan_out(df, time_freq)
     threshold_value = grouped['unique_recipients'].quantile(threshold/100)
     grouped['is_outlier'] = grouped['unique_recipients'] > threshold_value
     return grouped
@@ -323,28 +322,3 @@ def detect_gather_scatter_money_laundering(df, percentile=95):
 
 #create network files
 
-def export_gephi_files(df, output_dir):
-    """
-    Exports nodes and edges files for Gephi network analysis.
-
-    Parameters:
-    - df: pandas DataFrame with transaction data.
-    - output_dir: Path to the directory where files will be saved.
-    """
-    # Ensure output directory exists
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Create nodes: unique accounts from both sender and receiver columns
-    accounts = pd.unique(df[['Account', 'Account.1']].values.ravel('K'))
-    nodes = pd.DataFrame({'Id': accounts})
-    nodes_path = os.path.join(output_dir, 'nodes.csv')
-    nodes.to_csv(nodes_path, index=False)
-
-    # Create edges: count number of transactions between each pair
-    edge_counts = df.groupby(['Account', 'Account.1']).size().reset_index(name='Weight')
-    edge_counts.columns = ['Source', 'Target', 'Weight']
-    edges_path = os.path.join(output_dir, 'edges_by_count.csv')
-    edge_counts.to_csv(edges_path, index=False)
-
-    print(f"Nodes file saved to: {nodes_path}")
-    print(f"Edges file saved to: {edges_path}")

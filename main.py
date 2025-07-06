@@ -1,26 +1,38 @@
 import aml_functions as aml
 import helpers as helpers
 
-
 filePath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/HI-Small_Trans.csv"
 folderPath = "/Users/perliljekvist/Documents/Python/IBM AML/Data/"
 
-df = helpers.read_csv_custom(filePath, nrows=10000)
+df = helpers.read_csv_custom(filePath, nrows=100000)
 
-aml.detect_gather_scatter_money_laundering(df, percentile=98)
+# Check distribution: fan-out
+grouped_df = aml.preprocess_and_group_fan_out(df, time_freq='10H')
+grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 2)
+grouped_df = grouped_df.dropna(how='all') 
 
-#results = detect_fan_in_groups_zscore(df, time_freq='1H', threshold=3)
+
+# Check distribution: fan-in
+grouped_df = aml.preprocess_and_group_fan_in(df, time_freq='10H')
+grouped_df = grouped_df.where(grouped_df['unique_senders'] > 2)
+grouped_df = grouped_df.dropna(how='all')
+
+print(grouped_df.head(10))
 
 # Filter flagged transactions
 #suspicious = results[results['is_outlier']]
 
+# aml.plot_unique_recipient_histogram(helpers.grouped_df.where(helpers.grouped_df['unique_recipients'] > 1))
+# helpers.plot_group_distributions(helpers.grouped_df)
+
+#Detect suspecious fan-in pattern. Z-score based.
+#results = detect_fan_in_groups_zscore(df, time_freq='1H', threshold=3)
 #simple_fan_in_report(results)
 
-# Check distribution: Source account -> nof destination accounts before choosing method of detection
-#plot_unique_recipient_histogram(grouped_df.where(grouped_df['unique_recipients'] > 1))
-#plot_group_distributions(grouped_df)
+
+#aml.detect_gather_scatter_money_laundering(df, percentile=98)
           
-#Detect suspicious patterns z-score based. No suitable for non-Gaussian distributed data 
+#Detect suspicious patterns z-score based. No suitable for non-Gaussian distributed data s
 # suspicious = detect_fan_out_patterns(df, time_freq='1H', z_threshold=3)
 # print(f"Found {len(suspicious)} suspicious patterns")
 # print(suspicious[['From Bank', 'Account', 'Timestamp', 'unique_recipients', 'z_score']])
@@ -43,9 +55,7 @@ aml.detect_gather_scatter_money_laundering(df, percentile=98)
 # save_df_to_csv(grouped_df, "forocular.csv", folderPath)
 #df = get_file_head_as_df(filePath, n=10, encoding='utf-8')
 
-# grouped_df = preprocess_and_group(df, time_freq='10H')
-# grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 3)
-# grouped_df = grouped_df.dropna(how='all') 
+
 
 
 
