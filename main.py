@@ -2,21 +2,27 @@ import aml_functions as aml
 import helpers as helpers
 from paths_and_stuff import *
 
-df = helpers.read_csv_custom(filePath, nrows=200000)
+df = helpers.read_csv_custom(filePath, nrows=20000)
+df = df.where(df['Account'] == '100428660')
+df = df.dropna(how='all') 
 
-helpers.export_gephi_files_banks(df,folderPath)
+helpers.save_df_to_csv(df,"suspicious_account.csv",folderPath)
 
-print("semms runnable at least!")
+#helpers.export_gephi_files_banks(df,folderPath)
 
-# Check distribution: fan-out
+#Check distribution: fan-out
 # grouped_df = aml.preprocess_and_group_fan_out(df, time_freq='10H')
-# grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 2)
+# grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 4)
 # grouped_df = grouped_df.dropna(how='all') 
+
+# helpers.save_df_to_csv(grouped_df.head(100),"testgroup.csv",folderPath)
+
+# print("semms runnable at least!")
 
 # Check distribution: fan-in
 # grouped_df = aml.preprocess_and_group_fan_in(df, time_freq='10H')
 # grouped_df = grouped_df.where(grouped_df['unique_senders'] > 2)
-# grouped_df = grouped_df.dropna(how='all')
+# grouped_df = grouped_df.dropna(how='all'))
 
 # print(grouped_df.head(10))
 
