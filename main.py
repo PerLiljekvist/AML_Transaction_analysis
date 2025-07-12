@@ -1,14 +1,16 @@
-import aml_functions as aml
-import helpers as helpers
 from paths_and_stuff import *
+from helpers import *
+from aml_functions import *
 
-df = helpers.read_csv_custom(filePath, nrows=20000)
-df = df.where(df['Account'] == '100428660')
-df = df.dropna(how='all') 
+# df = helpers.read_csv_custom(filePath, nrows=100000)
+# df = df.where(df['Account'] == '100428660')
+# df = df.dropna(how='all') 
 
-helpers.save_df_to_csv(df,"suspicious_account.csv",folderPath)
+inspect_csv_file(filePath)
 
-#helpers.export_gephi_files_banks(df,folderPath)
+#helpers.save_df_to_csv(df,"suspicious_account.csv",folderPath)
+
+#helpers.export_gephi_files_accounts(df,folderPath)
 
 #Check distribution: fan-out
 # grouped_df = aml.preprocess_and_group_fan_out(df, time_freq='10H')

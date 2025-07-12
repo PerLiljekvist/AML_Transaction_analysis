@@ -115,7 +115,7 @@ def save_df_to_csv(df, file_name, file_path, index=False):
     full_path = os.path.join(file_path, file_name)
     df.to_csv(full_path, index=index)
 
-def export_gephi_files(df, output_dir):
+def export_gephi_files_accounts(df, output_dir):
     """
     Exports nodes and edges files for Gephi network analysis.
 
@@ -135,7 +135,7 @@ def export_gephi_files(df, output_dir):
     # Create edges: count number of transactions between each pair
     edge_counts = df.groupby(['Account', 'Account.1']).size().reset_index(name='Weight')
     edge_counts.columns = ['Source', 'Target', 'Weight']
-    edges_path = os.path.join(output_dir, 'edges_by_count.csv')
+    edges_path = os.path.join(output_dir, 'edges.csv')
     edge_counts.to_csv(edges_path, index=False)
 
     print(f"Nodes file saved to: {nodes_path}")
@@ -227,3 +227,55 @@ def export_gephi_files_banks(
 
     print(f"Nodes file saved to: {nodes_path}")
     print(f"Edges file saved to: {edges_path}")
+
+def inspect_csv_file(file_path):
+    """
+    Inspect a CSV file and print information about it without loading it into memory.
+    Prints:
+      - Number of lines
+      - Detected column separator
+      - Number of columns (from header)
+    Returns a dictionary with this information.
+    """
+    import os
+
+    info = {}
+    separators = [',', ';', '\t']
+    sep_names = {',': 'comma (,)', ';': 'semicolon (;)', '\t': 'tab (\\t)'}
+    detected_sep = None
+    num_columns = None
+    line_count = 0
+
+    if not os.path.isfile(file_path):
+        print(f"File not found: {file_path}")
+        return {'error': 'File not found'}
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            # Read the first line (header) to detect separator and columns
+            header = file.readline()
+            line_count = 1 if header else 0
+
+            # Detect separator by which one splits header into most columns
+            sep_counts = {sep: header.count(sep) for sep in separators}
+            detected_sep = max(sep_counts, key=sep_counts.get)
+            num_columns = header.count(detected_sep) + 1 if header else 0
+
+            # Count remaining lines efficiently
+            for _ in file:
+                line_count += 1
+
+        info['line_count'] = line_count
+        info['separator'] = sep_names[detected_sep]
+        info['num_columns'] = num_columns
+
+        print(f"File: {file_path}")
+        print(f"Number of lines: {line_count}")
+        print(f"Detected column separator: {sep_names[detected_sep]}")
+        print(f"Number of columns (from header): {num_columns}")
+
+        return info
+
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        return {'error': str(e)}
