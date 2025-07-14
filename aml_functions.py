@@ -217,6 +217,27 @@ def detect_fan_in_groups_zscore(df, time_freq='1H', threshold=3):
     grouped['is_outlier'] = grouped['z_score'] > threshold
     return grouped
 
+def detect_fan_in_groups_percentile(df, time_freq='1H', percentile=99):
+    """
+    Flags fan-in AML patterns using percentile outlier detection on unique senders.
+
+    Args:
+        df (pd.DataFrame): Transaction data.
+        time_freq (str): Time window for grouping (e.g., '1H' for 1 hour).
+        percentile (float): Percentile cutoff for outliers (e.g., 99 for top 1%).
+
+    Returns:
+        pd.DataFrame: Aggregated groups with outlier flags.
+    """
+    # Preprocess and group the data
+    grouped = preprocess_and_group_fan_in(df, time_freq)
+    # Calculate the percentile threshold
+    threshold_value = np.percentile(grouped['unique_senders'], percentile)
+    # Flag outliers
+    grouped['is_outlier'] = grouped['unique_senders'] > threshold_value
+    grouped['percentile_threshold'] = threshold_value
+    return grouped
+
 def simple_fan_in_report(suspicious_df):
     print("\n" + "="*50)
     print("SIMPLE FAN-IN AML REPORT")
