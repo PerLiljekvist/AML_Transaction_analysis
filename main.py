@@ -2,13 +2,12 @@ from paths_and_stuff import *
 from helpers import *
 from aml_functions import *
 
-df = read_csv_custom(filePath, nrows=10000)
+df = read_csv_custom(filePath, nrows=50000)
 #df = df.where(df['Account'] == '100428660')
 #df = df.dropna(how='all') 
 
-df = detect_fan_in_groups_percentile(df)
-
-simple_fan_in_report(df)
+df = detect_fan_out_groups_zscore(df)
+print(df)
 
 #Check distribution: fan-out*****************************************************
 # grouped_df = aml.preprocess_and_group_fan_out(df, time_freq='10H')

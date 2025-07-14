@@ -31,7 +31,7 @@ def preprocess_and_group_fan_out(df, time_freq='1H'):
     ).reset_index()
     return grouped
 
-def detect_fan_out_patterns(df, time_freq='10min', z_threshold=3):
+
     """
     Detect fan-out patterns using z-score on unique recipient counts per source account and time window.
     
@@ -173,6 +173,24 @@ def detect_fan_out_groups_percentile(df, time_freq='1H', threshold=95):
     
     # Cleanup temporary columns
     return result.drop(columns=['Sender_Key', 'Receiver_Key'], errors='ignore')
+
+def simple_fan_out_report(suspicious_df):
+    print("\n" + "="*50)
+    print("SIMPLE FAN-OUT AML REPORT")
+    print("="*50)
+    print(f"Number of suspicious fan-out groups: {len(suspicious_df)}")
+    
+    # Filter for groups with more than one unique recipient
+    multi_recipient_df = suspicious_df[suspicious_df['unique_recipients'] > 1]
+    print(f"Number of groups with >1 unique recipient: {len(multi_recipient_df)}")
+    
+    print("\nPreview of suspicious entries (showing unique_recipients):")
+    if not multi_recipient_df.empty:
+        print(multi_recipient_df[['Timestamp', 'Account.1', 'unique_recipients', 'transaction_count', 'total_sent']].head(5))
+    else:
+        print("No suspicious groups with more than one unique recipient.")
+    
+    print("="*50)
 
 #fan-in
 
