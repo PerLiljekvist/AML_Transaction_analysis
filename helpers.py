@@ -141,8 +141,6 @@ def export_gephi_files_accounts(df, output_dir):
     print(f"Nodes file saved to: {nodes_path}")
     print(f"Edges file saved to: {edges_path}")
 
-import pandas as pd
-
 def create_gephi_files_banks(df: pd.DataFrame, folder_path: str):
     # Stack both From and To bank+account pairs
     from_accounts = df[['From Bank', 'Account']].rename(columns={'From Bank': 'Bank', 'Account': 'Account'})
@@ -167,7 +165,6 @@ def create_gephi_files_banks(df: pd.DataFrame, folder_path: str):
     nodes.to_csv(nodes_file, index=False)
     edges.to_csv(edges_file, index=False)
     return nodes_file, edges_file
-
 
 def inspect_csv_file(file_path):
     """

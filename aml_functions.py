@@ -1,12 +1,7 @@
 import pandas as pd
-import csv
-import networkx as nx
 from scipy import stats
-from datetime import datetime
 import seaborn as sns
 import matplotlib.pyplot as plt
-import io
-import os
 import numpy as np
 
 #fan-out
@@ -359,5 +354,5 @@ def detect_gather_scatter_money_laundering(df, percentile=95):
     suspicious, gather_scatter_accounts, gather_threshold, scatter_threshold = detect_gather_scatter(df, percentile)
     print_gather_scatter_report(suspicious, gather_scatter_accounts, gather_threshold, scatter_threshold)
 
-#create network files
+
 

@@ -58,7 +58,10 @@ from aml_functions import *
 folderOfTheDay = create_new_folder(folderPath, "20250715")
 df = read_csv_custom(filePath, nrows=150000)
 
-create_gephi_files_banks(df,folderOfTheDay)
+print(df['From Bank'].nunique())
+
+#create_gephi_files_banks(df,folderOfTheDay)
+print("oki doki!")
 
 #export_gephi_files_accounts(df,folderPath)
 
