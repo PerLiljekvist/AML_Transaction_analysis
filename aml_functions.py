@@ -276,7 +276,7 @@ def simple_fan_in_report(suspicious_df):
 
 #scatter-gather
 
-def preprocess_transactions(df):
+def preprocess_transactions_scatter_gather(df):
     # Standardize column names
     df.columns = [col.strip().replace(' ', '_') for col in df.columns]
     # Ensure correct data types
@@ -314,13 +314,13 @@ def print_report(suspicious, scatter_accounts, gather_accounts, scatter_threshol
     #print(suspicious.to_string(index=False))
 
 def detect_scatter_gather_money_laundering(df, percentile=95):
-    df = preprocess_transactions(df)
+    df = preprocess_transactions_scatter_gather(df)
     suspicious, scatter_accounts, gather_accounts, scatter_threshold, gather_threshold = detect_scatter_gather(df, percentile)
     print_report(suspicious, scatter_accounts, gather_accounts, scatter_threshold, gather_threshold)
 
 #gather-scatter
 
-def preprocess_transactions(df):
+def preprocess_transactions_gather_scatter(df):
     df.columns = [col.strip().replace(' ', '_') for col in df.columns]
     df['Timestamp'] = pd.to_datetime(df['Timestamp'])
     df['Amount_Received'] = pd.to_numeric(df['Amount_Received'], errors='coerce')
@@ -355,7 +355,7 @@ def print_gather_scatter_report(suspicious, gather_scatter_accounts, gather_thre
     #print(suspicious.to_string(index=False))
 
 def detect_gather_scatter_money_laundering(df, percentile=95):
-    df = preprocess_transactions(df)
+    df = preprocess_transactions_gather_scatter(df)
     suspicious, gather_scatter_accounts, gather_threshold, scatter_threshold = detect_gather_scatter(df, percentile)
     print_gather_scatter_report(suspicious, gather_scatter_accounts, gather_threshold, scatter_threshold)
 

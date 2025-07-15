@@ -2,12 +2,11 @@ from paths_and_stuff import *
 from helpers import *
 from aml_functions import *
 
-df = read_csv_custom(filePath, nrows=50000)
+#df = read_csv_custom(filePath, nrows=10000)
 #df = df.where(df['Account'] == '100428660')
 #df = df.dropna(how='all') 
 
-df = detect_fan_out_groups_zscore(df)
-print(df)
+#df = detect_fan_out_groups_percentile(df)
 
 #Check distribution: fan-out*****************************************************
 # grouped_df = aml.preprocess_and_group_fan_out(df, time_freq='10H')
@@ -53,14 +52,15 @@ print(df)
 # save_df_to_csv(df, "account_with_many_transactions.csv", folderPath)
 #save_df_to_csv(percentile_result, "percentile_test", folderPath, index=False)
 
-
 #inspect_csv_file(filePath)
 
-
 #helpers.save_df_to_csv(df,"suspicious_account.csv",folderPath)
+folderOfTheDay = create_new_folder(folderPath, "20250715")
+df = read_csv_custom(filePath, nrows=150000)
 
-#helpers.export_gephi_files_accounts(df,folderPath)
+create_gephi_files_banks(df,folderOfTheDay)
 
+#export_gephi_files_accounts(df,folderPath)
 
 # save_df_to_csv(grouped_df, "forocular.csv", folderPath)
 #df = get_file_head_as_df(filePath, n=10, encoding='utf-8')

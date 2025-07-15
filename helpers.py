@@ -141,92 +141,33 @@ def export_gephi_files_accounts(df, output_dir):
     print(f"Nodes file saved to: {nodes_path}")
     print(f"Edges file saved to: {edges_path}")
 
-def export_gephi_files_banks(
-    df: pd.DataFrame,
-    output_dir: str,
-    *,
-    from_bank_col: str = "From Bank",
-    to_bank_col: str = "To Bank",
-    from_acct_col: str = "Account",
-    to_acct_col: str = "Account.1",
-    amount_col: str = "Amount Paid",     # or "Amount Received" if you prefer
-):
-    """
-    Export Gephi-ready nodes and edges for a bank-level transaction network.
+import pandas as pd
 
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Transaction data containing at least the columns specified below.
-    output_dir : str
-        Directory in which ``nodes.csv`` and ``edges.csv`` are written.
-    from_bank_col, to_bank_col : str, default "From Bank", "To Bank"
-        Column names holding the sender / receiver bank identifiers.
-    from_acct_col, to_acct_col : str, default "Account", "Account.1"
-        Column names holding the sender / receiver account identifiers.
-    amount_col : str, default "Amount Paid"
-        Column whose numeric values represent the transaction amount.
-    """
-    os.makedirs(output_dir, exist_ok=True)
+def create_gephi_files_banks(df: pd.DataFrame, folder_path: str):
+    # Stack both From and To bank+account pairs
+    from_accounts = df[['From Bank', 'Account']].rename(columns={'From Bank': 'Bank', 'Account': 'Account'})
+    to_accounts = df[['To Bank', 'Account.1']].rename(columns={'To Bank': 'Bank', 'Account.1': 'Account'})    
+    all_accounts = pd.concat([from_accounts, to_accounts], axis=0, ignore_index=True)
+    
+    # Now count unique accounts per bank
+    accounts_per_bank = all_accounts.drop_duplicates().groupby('Bank').agg(Number_of_Accounts=('Account', 'nunique')).reset_index()
+    accounts_per_bank['Id'] = accounts_per_bank['Bank'].astype(str)
+    accounts_per_bank['Label'] = accounts_per_bank['Bank'].astype(str)
+    nodes = accounts_per_bank[['Id', 'Label', 'Number_of_Accounts']]
 
-    # --- Build the node list -------------------------------------------------
-    all_banks = pd.unique(df[[from_bank_col, to_bank_col]].values.ravel("K"))
+    # Edge file creation (same as earlier)
+    df['Bank Pair'] = df.apply(lambda row: tuple(sorted([row['From Bank'], row['To Bank']])), axis=1)
+    edges = df.groupby('Bank Pair').size().reset_index(name='Number_of_Transactions')
+    edges[['Source', 'Target']] = pd.DataFrame(edges['Bank Pair'].tolist(), index=edges.index)
+    edges = edges[['Source', 'Target', 'Number_of_Transactions']]
 
-    # 1) How many *unique* accounts does each bank hold?
-    send_accts = (
-        df[[from_bank_col, from_acct_col]]
-        .rename(columns={from_bank_col: "Bank", from_acct_col: "Account"})
-        .drop_duplicates()
-    )
-    recv_accts = (
-        df[[to_bank_col, to_acct_col]]
-        .rename(columns={to_bank_col: "Bank", to_acct_col: "Account"})
-        .drop_duplicates()
-    )
-    acct_counts = (
-        pd.concat([send_accts, recv_accts], ignore_index=True)
-        .groupby("Bank")["Account"]
-        .nunique()
-    )
+    # Save files
+    nodes_file = f"{folder_path}/nodes.csv"
+    edges_file = f"{folder_path}/edges.csv"
+    nodes.to_csv(nodes_file, index=False)
+    edges.to_csv(edges_file, index=False)
+    return nodes_file, edges_file
 
-    # 2) Total amount in which the bank is involved (incoming + outgoing)
-    amt_out = df.groupby(from_bank_col)[amount_col].sum()
-    amt_in  = df.groupby(to_bank_col)[amount_col].sum()
-    total_amt = amt_out.add(amt_in, fill_value=0)
-
-    nodes = (
-        pd.DataFrame({"Id": all_banks})
-        .assign(
-            Accounts=lambda x: x["Id"].map(acct_counts).fillna(0).astype(int),
-            TotalAmount=lambda x: x["Id"].map(total_amt).fillna(0),
-        )
-    )
-
-    # --- Build the edge list -------------------------------------------------
-    edges = (
-        df.groupby([from_bank_col, to_bank_col])
-        .agg(
-            Weight=("Timestamp", "size"),        # number of transactions
-            TotalAmount=(amount_col, "sum"),     # total value between the pair
-        )
-        .reset_index()
-        .rename(
-            columns={
-                from_bank_col: "Source",
-                to_bank_col: "Target",
-            }
-        )
-    )
-
-    # --- Export --------------------------------------------------------------
-    nodes_path = os.path.join(output_dir, "nodes.csv")
-    edges_path = os.path.join(output_dir, "edges.csv")
-
-    nodes.to_csv(nodes_path, index=False)
-    edges.to_csv(edges_path, index=False)
-
-    print(f"Nodes file saved to: {nodes_path}")
-    print(f"Edges file saved to: {edges_path}")
 
 def inspect_csv_file(file_path):
     """
@@ -279,3 +220,15 @@ def inspect_csv_file(file_path):
     except Exception as e:
         print(f"Error reading file: {e}")
         return {'error': str(e)}
+
+def create_new_folder(base_path, folder_name):
+    """
+    Creates a new folder with the given folder_name inside base_path.
+    Returns the full path to the newly created folder.
+    """
+    # Construct the full path for the new folder
+    new_folder_path = os.path.join(base_path, folder_name)
+    # Create the new folder if it doesn't already exist
+    os.makedirs(new_folder_path, exist_ok=True)
+    # Return the full path
+    return new_folder_path
