@@ -115,7 +115,7 @@ def save_df_to_csv(df, file_name, file_path, index=False):
     full_path = os.path.join(file_path, file_name)
     df.to_csv(full_path, index=index)
 
-def export_gephi_files_accounts(df, output_dir):
+def create_gephi_files_accounts(df, output_dir):
     """
     Exports nodes and edges files for Gephi network analysis.
 
