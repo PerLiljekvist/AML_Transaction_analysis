@@ -15,7 +15,7 @@ from io import StringIO
 # 1. Load and Preprocess Data. 
 # ----------------------------
 
-df = read_csv_custom(filePath, nrows=100000)
+df = read_csv_custom(filePath, nrows=10000)
 
 # ----------------------------
 # 2. Feature Engineering
@@ -92,6 +92,36 @@ scatter = plt.scatter(
 plt.title('Isolation Forest Results (PCA 2D projection)\n(-1 = anomaly, 1 = normal)')
 plt.xlabel('PCA Component 1')
 plt.ylabel('PCA Component 2')
+plt.legend(handles=scatter.legend_elements()[0], labels=['Anomaly (-1)', 'Normal (1)'])
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+
+# ----------------------------
+# Optional Plot: 2D Projection using t-SNE
+# ----------------------------
+
+# Create a t-SNE instance with common parameters
+tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000, verbose=1)
+
+# Fit and transform the scaled features
+X_tsne = tsne.fit_transform(X_scaled)
+
+# Attach t-SNE components to the DataFrame for plotting
+df['TSNE1'] = X_tsne[:, 0]
+df['TSNE2'] = X_tsne[:, 1]
+
+plt.figure(figsize=(8, 6))
+scatter = plt.scatter(
+    df['TSNE1'], df['TSNE2'],
+    c=df['iso_pred'], cmap='coolwarm', alpha=0.7, edgecolor='k'
+)
+plt.title('Isolation Forest Results (t-SNE 2D projection)\n(-1 = anomaly, 1 = normal)')
+plt.xlabel('t-SNE Dimension 1')
+plt.ylabel('t-SNE Dimension 2')
 plt.legend(handles=scatter.legend_elements()[0], labels=['Anomaly (-1)', 'Normal (1)'])
 plt.grid(True)
 plt.tight_layout()

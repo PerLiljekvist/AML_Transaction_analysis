@@ -2,9 +2,9 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import MiniBatchKMeans, DBSCAN
-from sklearn.neighbors import NearestNeighbors
-from sklearn.ensemble import IsolationForest
-import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plts
 import seaborn as sns
 from paths_and_stuff import *
 from helpers import *
@@ -98,4 +98,49 @@ plt.title('DBSCAN Clustering Results')
 plt.xlabel('Amount_Paid')
 plt.ylabel('Amount_Diff')
 plt.legend()
+plt.show()
+
+
+# ----------------------------
+# 6. Optional Plot: PCA 2D Projection of all features
+# ----------------------------
+
+pca = PCA(n_components=2, random_state=42)
+X_pca = pca.fit_transform(X_scaled)
+df['PCA1'] = X_pca[:, 0]
+df['PCA2'] = X_pca[:, 1]
+
+plt.figure(figsize=(8, 6))
+scatter = plt.scatter(
+    df['PCA1'], df['PCA2'],
+    c=df['dbscan_cluster'], cmap='tab10', alpha=0.7, edgecolor='k'
+)
+plt.title('DBSCAN Clustering Results (PCA 2D projection)')
+plt.xlabel('PCA Component 1')
+plt.ylabel('PCA Component 2')
+plt.colorbar(scatter, label='Cluster ID (-1 = anomaly/noise)')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# ----------------------------
+# 7. Optional Plot: t-SNE 2D Projection of all features
+# ----------------------------
+
+tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000, verbose=1)
+X_tsne = tsne.fit_transform(X_scaled)
+df['TSNE1'] = X_tsne[:, 0]
+df['TSNE2'] = X_tsne[:, 1]
+
+plt.figure(figsize=(8, 6))
+scatter = plt.scatter(
+    df['TSNE1'], df['TSNE2'],
+    c=df['dbscan_cluster'], cmap='tab10', alpha=0.7, edgecolor='k'
+)
+plt.title('DBSCAN Clustering Results (t-SNE 2D projection)')
+plt.xlabel('t-SNE Dimension 1')
+plt.ylabel('t-SNE Dimension 2')
+plt.colorbar(scatter, label='Cluster ID (-1 = anomaly/noise)')
+plt.grid(True)
+plt.tight_layout()
 plt.show()
