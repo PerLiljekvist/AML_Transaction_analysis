@@ -3,7 +3,7 @@ from helpers import *
 from aml_functions import *
 import os
 
-df = read_csv_custom("/Users/perliljekvist/Documents/Python/IBM_AML/Data/HI-Small_Trans.csv", nrows=10000)
+df = read_csv_custom(filePath, nrows=10000)
 #df = df.where(df['Account'] == '100428660')
 df = df.dropna(how='all') 
 print(df.head())

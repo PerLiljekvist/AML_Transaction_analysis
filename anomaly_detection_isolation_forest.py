@@ -1,9 +1,9 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import MiniBatchKMeans, DBSCAN
-from sklearn.neighbors import NearestNeighbors
 from sklearn.ensemble import IsolationForest
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
 import seaborn as sns
 from paths_and_stuff import *
@@ -15,7 +15,7 @@ from io import StringIO
 # 1. Load and Preprocess Data. 
 # ----------------------------
 
-df = read_csv_custom(filePath, nrows=10000)
+df = read_csv_custom(filePath, nrows=100000)
 
 # ----------------------------
 # 2. Feature Engineering
@@ -54,7 +54,7 @@ X_scaled = scaler.fit_transform(X)
 
 ## 3.4 Isolation Forest
 print("[+] Running Isolation Forest...")
-iso = IsolationForest(contamination=0.2, random_state=42)
+iso = IsolationForest(contamination=0.05, random_state=42)
 df['iso_pred'] = iso.fit_predict(X_scaled)
 df['iso_score'] = iso.decision_function(X_scaled)
 
@@ -73,9 +73,26 @@ print("\n[+] Top anomalies found:")
 print(anomalies_df[[ 'iso_score', 'iso_pred']])
 
 # ----------------------------
-# 5. Optional Plot (pairplot)
+# 5. Optional Plot (2D Projection using PCA)
 # ----------------------------
 
-sns.pairplot(df, vars=['Amount_Paid', 'Amount_Diff', 'Hour'], hue='iso_pred', palette='coolwarm')
-plt.suptitle('Isolation Forest Results (-1 = anomaly)', y=1.02)
+# Reduce features to 2D using PCA
+pca = PCA(n_components=2, random_state=42)
+X_pca = pca.fit_transform(X_scaled)
+
+# Attach the PCA components for plotting
+df['PCA1'] = X_pca[:, 0]
+df['PCA2'] = X_pca[:, 1]
+
+plt.figure(figsize=(8, 6))
+scatter = plt.scatter(
+    df['PCA1'], df['PCA2'],
+    c=df['iso_pred'], cmap='coolwarm', alpha=0.7, edgecolor='k'
+)
+plt.title('Isolation Forest Results (PCA 2D projection)\n(-1 = anomaly, 1 = normal)')
+plt.xlabel('PCA Component 1')
+plt.ylabel('PCA Component 2')
+plt.legend(handles=scatter.legend_elements()[0], labels=['Anomaly (-1)', 'Normal (1)'])
+plt.grid(True)
+plt.tight_layout()
 plt.show()

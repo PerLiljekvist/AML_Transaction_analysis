@@ -10,7 +10,6 @@ from paths_and_stuff import *
 from helpers import *
 from aml_functions import *
 
-
 # ----------------------------
 # 1. Load and Preprocess Data. 
 # ----------------------------
@@ -19,7 +18,6 @@ from aml_functions import *
 df = read_csv_custom(filePath, nrows=10000)
 # df = df.where(df['Is Laundering'] == 1).dropna().count()
 # print(df['Is Laundering'])
-
 
 # ----------------------------
 # 2. Feature Engineerings
