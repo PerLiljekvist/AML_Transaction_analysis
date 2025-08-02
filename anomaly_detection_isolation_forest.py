@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from paths_and_stuff import *
 from helpers import *
-from aml_functions import *
+from simple_aml_functions import *
 from io import StringIO
 
 # ----------------------------
@@ -54,7 +54,7 @@ X_scaled = scaler.fit_transform(X)
 
 ## 3.4 Isolation Forest
 print("[+] Running Isolation Forest...")
-iso = IsolationForest(contamination=0.05, random_state=42)
+iso = IsolationForest(contamination=0.01, random_state=42)
 df['iso_pred'] = iso.fit_predict(X_scaled)
 df['iso_score'] = iso.decision_function(X_scaled)
 
@@ -67,10 +67,12 @@ print("\n[+] Detected anomalies:")
 print("  - IsolationForest flagged:", (df['iso_pred'] == -1).sum())
 
 # Show table of potential anomalies
-anomalies_df = df[(df['iso_pred'] == -1)]
 
-print("\n[+] Top anomalies found:")
-print(anomalies_df[[ 'iso_score', 'iso_pred']])
+print_anomalies(df)
+# anomalies_df = df[(df['iso_pred'] == -1)]
+
+# print("\n[+] Top anomalies found:")
+# print(anomalies_df[[ 'iso_score', 'iso_pred']])
 
 # ----------------------------
 # 5. Optional Plot (2D Projection using PCA)
@@ -105,24 +107,26 @@ import matplotlib.pyplot as plt
 # ----------------------------
 
 # Create a t-SNE instance with common parameters
-tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000, verbose=1)
+#tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000, verbose=1)
 
 # Fit and transform the scaled features
-X_tsne = tsne.fit_transform(X_scaled)
+# X_tsne = tsne.fit_transform(X_scaled)
 
 # Attach t-SNE components to the DataFrame for plotting
-df['TSNE1'] = X_tsne[:, 0]
-df['TSNE2'] = X_tsne[:, 1]
+# df['TSNE1'] = X_tsne[:, 0]
+# df['TSNE2'] = X_tsne[:, 1]
 
-plt.figure(figsize=(8, 6))
-scatter = plt.scatter(
-    df['TSNE1'], df['TSNE2'],
-    c=df['iso_pred'], cmap='coolwarm', alpha=0.7, edgecolor='k'
-)
-plt.title('Isolation Forest Results (t-SNE 2D projection)\n(-1 = anomaly, 1 = normal)')
-plt.xlabel('t-SNE Dimension 1')
-plt.ylabel('t-SNE Dimension 2')
-plt.legend(handles=scatter.legend_elements()[0], labels=['Anomaly (-1)', 'Normal (1)'])
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+# plt.figure(figsize=(8, 6))
+# scatter = plt.scatter(
+#     df['TSNE1'], df['TSNE2'],
+#     c=df['iso_pred'], cmap='coolwarm', alpha=0.7, edgecolor='k'
+# )
+# plt.title('Isolation Forest Results (t-SNE 2D projection)\n(-1 = anomaly, 1 = normal)')
+# plt.xlabel('t-SNE Dimension 1')
+# plt.ylabel('t-SNE Dimension 2')
+# plt.legend(handles=scatter.legend_elements()[0], labels=['Anomaly (-1)', 'Normal (1)'])
+# plt.grid(True)
+# plt.tight_layout()
+# plt.show()
+
+

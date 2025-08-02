@@ -7,12 +7,14 @@ newDir = create_new_folder(folderPath, 'accounts_nodes_edges_2025-07-26')
 
 outlier_accounts = ['100428660']
 
-df = read_csv_custom(filePath, nrows=30000)
-df['Timestamp'] = df['Timestamp'].astype('datetime64[ns]')
-print(df.head())
+df = read_csv_custom(filePath, nrows=400000)
+df['Timestamp2'] = df['Timestamp'].astype('datetime64[ns]').dt.date
+#df2 = df.groupby('Timestamp2')
+print(df['Timestamp2'].unique())
+quit()
 
 filtered = df[
-    (df['Account'].isin(outlier_accounts))
+    (df.groupby['Account'].isin(outlier_accounts))
 ]
 
 summary = filtered.groupby('Account').agg({
