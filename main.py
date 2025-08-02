@@ -1,13 +1,16 @@
 from paths_and_stuff import *
 from helpers import *
-from aml_functions import *
+from simple_aml_functions import *
 import os
 
-df = read_csv_custom(filePath, nrows=10000)
-#df = df.where(df['Account'] == '100428660')
-df = df.dropna(how='all') 
+df = load_rows_for_account(filePath, "8000F4510",sep=",")
 print(df.head())
-quit()
+
+# df = read_csv_custom(filePath, nrows=10000)
+# #df = df.where(df['Account'] == '100428660')
+# df = df.dropna(how='all') 
+# print(df.head())
+# quit()
 
 #df = detect_fan_out_groups_percentile(df)
 
