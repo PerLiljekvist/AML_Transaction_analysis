@@ -8,14 +8,14 @@ import matplotlib.pyplot as plts
 import seaborn as sns
 from paths_and_stuff import *
 from helpers import *
-from aml_functions import *
+from simple_aml_functions import *
 
 # ----------------------------
 # 1. Load and Preprocess Data. 
 # ----------------------------
 
 #folderOfTheDay = create_new_folder(folderPath, "20250715_account_nw")
-df = read_csv_custom(filePath, nrows=10000)
+df = read_csv_custom(filePath, nrows=40000)
 # df = df.where(df['Is Laundering'] == 1).dropna().count()
 # print(df['Is Laundering'])
 
