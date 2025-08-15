@@ -5,7 +5,7 @@ from helpers import *
 
 newDir = create_new_folder(folderPath, 'accounts_nodes_edges_2025-07-26')
 
-outlier_account = "100428660"
+outlier_account = "800043C00"
 outlier_accounts = [outlier_account]
 
 df = load_rows_for_account(filePath, outlier_account,sep=",")
