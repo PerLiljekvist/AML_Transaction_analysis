@@ -1,83 +1,125 @@
+"""
+AML/CFT Anomaly Detection Comparison (PyOD)
+-------------------------------------------
+- Loads transaction data
+- Runs multiple anomaly detection algorithms
+- Produces report:
+    * # anomalies per algorithm
+    * Overlaps (pairwise + consensus)
+    * Output CSVs with flags
+"""
+
 import pandas as pd
+import numpy as np
 from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
 from pyod.models.iforest import IForest
 from pyod.models.lof import LOF
+from pyod.models.copod import COPOD
 from pyod.models.pca import PCA
-from pyod.models.auto_encoder import AutoEncoder
-from pyod.utils.utility import standardizer
-import matplotlib.pyplot as plt
-from helpers import *
-from paths_and_stuff import * 
+from pyod.models.knn import KNN
+from pyod.models.hbos import HBOS
+import itertools
+import os
+from helpers import * 
+from paths_and_stuff import *
+
+# ---------------- CONFIG ----------------
+INPUT_FILE = "transactions_sample.csv"   # Update path
+OUTPUT_DIR = "anomaly_results"
+CONTAMINATION = 0.05   # Expected % anomalies (adjust to dataset size)
+NUMERIC_FEATURES = ["Amount Received", "Amount Paid"]
+CATEGORICAL_FEATURES = ["Payment Format"]
+# ----------------------------------------
 
 
-# --- 1. Load data ---
-newFolderPath = create_new_folder(folderPath, "2025-08-15")
-df = read_csv_custom(filePath, nrows=10000)
-df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+def load_and_prepare_data(filepath):
+    """Load CSV and prepare features for modeling."""
+    df = read_csv_custom(filePath, nrows=1000)
 
-# --- 2. Feature selection ---
+    # One-hot encode Payment Format
+    if CATEGORICAL_FEATURES:
+        df = pd.get_dummies(df, columns=CATEGORICAL_FEATURES, drop_first=True)
 
-# Numerical features
-numeric_features = ["Amount Received", "Amount Paid"]
+    # Feature matrix
+    features = [col for col in NUMERIC_FEATURES if col in df.columns]
+    features += [c for c in df.columns if c not in features and c not in [
+        "Timestamp", "From Bank", "Account", "To Bank", "Account.1",
+        "Receiving Currency", "Payment Currency", "Is Laundering"
+    ]]
 
-# Categorical features for one-hot encoding
-categorical_features = ["Payment Format"]
+    X = df[features].fillna(0).values
 
-# One-hot encode selected categorical features
-df_encoded = pd.get_dummies(df[categorical_features], drop_first=True)
+    # Scale
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
-# Combine into feature matrix
-X_raw = pd.concat([df[numeric_features], df_encoded], axis=1)
+    return df, X_scaled
 
-# --- 3. Standardize feature matrix ---
-X_scaled = StandardScaler().fit_transform(X_raw)
 
-# --- 4. Define multiple models for comparison ---
-models = {
-    "IsolationForest": IForest(contamination=0.1, random_state=42),
-    "LocalOutlierFactor": LOF(contamination=0.1),
-    "PCA": PCA(contamination=0.1),
-   #"AutoEncoder": AutoEncoder(hidden_neurons=[8, 4, 4, 8], epochs=30, contamination=0.1, verbose=0)
-}
-
-# --- 5. Fit and compare models ---
-results = {}
-
-for name, model in models.items():
-    model.fit(X_scaled)
-    labels = model.predict(X_scaled)
-    scores = model.decision_function(X_scaled)
-    results[name] = {
-        "labels": labels,
-        "scores": scores
+def run_algorithms(X):
+    """Run PyOD algorithms and return flags."""
+    algorithms = {
+        "IForest": IForest(contamination=CONTAMINATION, random_state=42),
+        "LOF": LOF(contamination=CONTAMINATION),
+        "COPOD": COPOD(contamination=CONTAMINATION),
+        "PCA": PCA(contamination=CONTAMINATION),
+        "KNN": KNN(contamination=CONTAMINATION),
+        "HBOS": HBOS(contamination=CONTAMINATION)
     }
-    print(f"🔍 {name}: {sum(labels)} anomalies detected")
 
-# --- 6. Choose one model to visualize (e.g. Isolation Forest) ---
-model_to_use = "IsolationForest"
-df["Anomaly"] = results[model_to_use]["labels"]
-df["Anomaly_Score"] = results[model_to_use]["scores"]
+    results = {}
+    for name, model in algorithms.items():
+        model.fit(X)
+        results[name] = model.labels_  # 0 = normal, 1 = anomaly
+    return results
 
-# --- 7. Save anomalies ---
-anomalies = df[df["Anomaly"] == 1]
-anomalies.to_csv(newFolderPath + "flagged_anomalies.csv", index=False)
 
-# --- 8. Plot anomaly scores over time ---
-plt.figure(figsize=(12, 4))
-plt.scatter(df["Timestamp"], df["Amount Paid"], c=df["Anomaly"], cmap="coolwarm", alpha=0.7)
-plt.title(f"Anomaly Detection with {model_to_use}")
-plt.xlabel("Timestamp")
-plt.ylabel("Amount Paid")
-plt.xticks(rotation=45)
-plt.tight_layout()
-plt.show()
+def analyze_results(df, results):
+    """Summarize anomalies and overlaps."""
+    res_df = df.copy()
+    for name, labels in results.items():
+        res_df[f"Anomaly_{name}"] = labels
 
-# --- 9. Optional: Score histogram ---
-plt.figure(figsize=(8, 4))
-plt.hist(df["Anomaly_Score"], bins=50, color="gray", edgecolor="black")
-plt.title(f"Anomaly Scores ({model_to_use})")
-plt.xlabel("Score")
-plt.ylabel("Frequency")
-plt.tight_layout()
-plt.show()
+    # Count anomalies per algorithm
+    counts = {name: labels.sum() for name, labels in results.items()}
+
+    # Overlap counts
+    overlap = {}
+    algo_names = list(results.keys())
+    for r in range(2, len(algo_names) + 1):
+        for combo in itertools.combinations(algo_names, r):
+            mask = np.all([results[a] == 1 for a in combo], axis=0)
+            overlap[" & ".join(combo)] = mask.sum()
+
+    return res_df, counts, overlap
+
+
+def save_report(res_df, counts, overlap):
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    # Save detailed results
+    res_df.to_csv(os.path.join(OUTPUT_DIR, "detailed_results.csv"), index=False)
+
+    # Save summary
+    summary = pd.DataFrame([
+        {"Algorithm": k, "Anomalies Found": v} for k, v in counts.items()
+    ])
+    summary.to_csv(os.path.join(OUTPUT_DIR, "summary_counts.csv"), index=False)
+
+    overlap_df = pd.DataFrame([
+        {"Algorithms": k, "Shared Anomalies": v} for k, v in overlap.items()
+    ])
+    overlap_df.to_csv(os.path.join(OUTPUT_DIR, "summary_overlap.csv"), index=False)
+
+    print("✅ Reports saved in:", OUTPUT_DIR)
+    print("\n--- Summary Counts ---")
+    print(summary)
+    print("\n--- Overlaps ---")
+    print(overlap_df)
+
+
+if __name__ == "__main__":
+    df, X = load_and_prepare_data(INPUT_FILE)
+    results = run_algorithms(X)
+    res_df, counts, overlap = analyze_results(df, results)
+    save_report(res_df, counts, overlap)

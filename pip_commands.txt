@@ -1,0 +1,13 @@
+Task	Command (Windows/macOS/Linux)	Notes
+Check Python version	python --version	Or use python -V
+python3 --version	Use if python points to Python 2
+Create virtual environment	python -m venv .venv	Creates .venv in current folder
+Activate virtual environment	.\.venv\Scripts\activate (Windows)	
+source .venv/bin/activate (macOS/Linux)	
+Deactivate virtual environment	deactivate	Works on all platforms
+Install package	pip install <package>	Example: pip install requests
+Install from requirements.txt	pip install -r requirements.txt	
+List installed packages	pip list	
+Upgrade pip	python -m pip install --upgrade pip	
+Freeze packages to requirements	pip freeze > requirements.txt	
+Run Python file	python <filename>.py	Example: python main.py
