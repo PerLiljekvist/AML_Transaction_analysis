@@ -42,7 +42,7 @@ df.rename(columns={
 
 # Parse timestamps and derive simple features
 df['Timestamp'] = pd.to_datetime(df.get('Timestamp'), errors='coerce')
-df['Hour'] = df['Timestamp'].dt.hour
+df['Hour'] = df['Timestamp'].dt.hours
 df['Amount_Diff'] = (df['Amount_Paid'] - df['Amount_Received']).abs()
 df['Same_Account'] = (df['From_Account'] == df['To_Account']).astype(int)
 df['Same_Bank'] = (df['From_Bank'] == df['To_Bank']).astype(int)

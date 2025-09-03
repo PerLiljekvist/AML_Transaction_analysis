@@ -5,7 +5,7 @@ from helpers import *
 
 newDir = create_new_folder(folderPath, 'accounts_nodes_edges_2025-07-26')
 
-outlier_account = "800043C00"
+outlier_account = "100428660"
 outlier_accounts = [outlier_account]
 
 df = load_rows_for_account(filePath, outlier_account,sep=",")
@@ -36,6 +36,7 @@ for acct in outlier_accounts:
     daily_amount = acct_data.groupby('Date')['Amount Paid'].sum()
     # Plot
     plt.figure(figsize=(10,5))
+    plt.title("Payment: Asccount " + outlier_account)
     plt.plot(daily_amount.index, daily_amount.values, marker='o')
     plt.xlabel('Date')
     plt.ylabel('Total Amount Paid')

@@ -3,26 +3,38 @@ from helpers import *
 from simple_aml_functions import *
 import os
 
-df = load_rows_for_account(filePath, "8000F4510",sep=",")
-print(df.head())
+#print(get_file_head_as_df(filePath))
 
-# df = read_csv_custom(filePath, nrows=10000)
+# newFolder = create_new_folder(folderPath, "20250803")
+#df = load_rows_for_account(filePath, "1004286A8",sep=",")
+
+
+#print(df['Timestamp'].astype('datetime64[ns]').dt.date.unique())
+
+
+# save_df_to_csv(df,"susp_acc.csv", newFolder)
+# print("oki!")
+
+df = read_csv_custom(filePath, nrows=10000)
 # #df = df.where(df['Account'] == '100428660')
-# df = df.dropna(how='all') 
-# print(df.head())
+df = df.dropna(how='all') 
+# print(df.head())s
 # quit()
 
 #df = detect_fan_out_groups_percentile(df)
 
+
 #Check distribution: fan-out*****************************************************
-# grouped_df = aml.preprocess_and_group_fan_out(df, time_freq='10H')
-# grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 4)
-# grouped_df = grouped_df.dropna(how='all') 
+grouped_df = preprocess_and_group_fan_out(df, time_freq='10H')
+grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 4)
+grouped_df = grouped_df.dropna(how='all') 
+
+
 
 # Check distribution: fan-in*****************************************************
-# grouped_df = aml.preprocess_and_group_fan_in(df, time_freq='10H')
-# grouped_df = grouped_df.where(grouped_df['unique_senders'] > 2)
-# grouped_df = grouped_df.dropna(how='all'))
+# grouped_df = preprocess_and_group_fan_in(df, time_freq='10H')
+# grouped_df = grouped_df.where(grouped_df['unique_senders'] > 5)
+# grouped_df = grouped_df.dropna(how='all')
 
 # print(grouped_df.head(10))
 
