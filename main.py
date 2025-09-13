@@ -16,8 +16,16 @@ import os
 # print("oki!")
 
 df = read_csv_custom(filePath, nrows=10000)
+top_outbound, top_inbound = top_accounts_by_transactions(df, top_n=100)
+
+print("Top outbound accounts:")
+print(top_outbound)
+
+print("\nTop inbound accounts:")
+print(top_inbound)
 # #df = df.where(df['Account'] == '100428660')
-df = df.dropna(how='all') 
+#df = df.dropna(how='all') 
+
 # print(df.head())s
 # quit()
 
@@ -25,11 +33,9 @@ df = df.dropna(how='all')
 
 
 #Check distribution: fan-out*****************************************************
-grouped_df = preprocess_and_group_fan_out(df, time_freq='10H')
-grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 4)
-grouped_df = grouped_df.dropna(how='all') 
-
-
+#grouped_df = preprocess_and_group_fan_out(df, time_freq='10H')
+#grouped_df = grouped_df.where(grouped_df['unique_recipients'] > 4)
+#grouped_df = grouped_df.dropna(how='all') 
 
 # Check distribution: fan-in*****************************************************
 # grouped_df = preprocess_and_group_fan_in(df, time_freq='10H')

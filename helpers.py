@@ -260,3 +260,67 @@ def load_rows_for_account(filepath, account, account_column="Account", sep=";", 
         # Return an empty DataFrame with the right columns
         return pd.DataFrame(columns=pd.read_csv(filepath, sep=sep, nrows=0).columns)
 
+import pandas as pd
+
+import pandas as pd
+
+import pandas as pd
+
+import pandas as pd
+
+def top_accounts_by_transactions(df: pd.DataFrame,
+                                 top_n: int = 100,
+                                 source_col: str = "Account",
+                                 target_col: str = "Account.1"):
+    """
+    Count transactions separately for outbound and inbound roles.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Transactions data.
+    top_n : int
+        Number of accounts to return for each direction.
+    source_col : str
+        Column name with the sending account.
+    target_col : str
+        Column name with the receiving account.
+
+    Returns
+    -------
+    outbound_df : pd.DataFrame
+        Columns ['Account', 'outbound_tx_count'], top_n rows sorted descending.
+    inbound_df : pd.DataFrame
+        Columns ['Account', 'inbound_tx_count'], top_n rows sorted descending.
+
+    Notes
+    -----
+    - Self-transfers (source == target on the same row) count once for outbound
+      and once for inbound, since they are both a send and receive event.
+    - NaN values are ignored.
+    """
+
+    # Top outbound accounts
+    outbound_df = (
+        df[source_col]
+        .dropna()
+        .value_counts()
+        .head(top_n)
+        .rename_axis("Account")
+        .reset_index(name="outbound_tx_count")
+    )
+
+    # Top inbound accounts
+    inbound_df = (
+        df[target_col]
+        .dropna()
+        .value_counts()
+        .head(top_n)
+        .rename_axis("Account")
+        .reset_index(name="inbound_tx_count")
+    )
+
+    return outbound_df, inbound_df
+
+
+
