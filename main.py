@@ -16,7 +16,7 @@ import os
 # print("oki!")
 
 df = read_csv_custom(filePath, nrows=10000)
-top_outbound, top_inbound = top_accounts_by_transactions(df, top_n=100)
+top_outbound, top_inbound = top_accounts_by_transactions(df, top_n=10)
 
 print("Top outbound accounts:")
 print(top_outbound)
