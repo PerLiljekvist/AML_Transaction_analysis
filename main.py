@@ -14,7 +14,12 @@ import os
 # save_df_to_csv(df,"susp_acc.csv", newFolder)
 # print("oki!")
 
-inspect_csv_file(filePath)
+#get_file_head_as_df(filePath)
+#inspect_csv_file(filePath)
+df = read_csv_custom(filePath, nrows=500000)
+df2, rep = convert_column(df, "Timestamp", "datetime", datetime_format="%Y-%m-%d %H:%M:%S")
+print(rep)
+
 
 # df = read_csv_custom(filePath, nrows=300000)
 # outbound, inbound, min_d, max_d = top_accounts_by_transactions(df)

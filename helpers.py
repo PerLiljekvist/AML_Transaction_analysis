@@ -4,6 +4,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import os
 import re
+import numpy as np
+from typing import Tuple, Dict, Any, Optional
 
 def make_df_from_file(file_path, column_name):
     df = pd.read_csv(file_path, sep=';')
@@ -35,7 +37,7 @@ def get_file_head_as_df(file_path, n=250, encoding='utf-8'):
             lines.append(line.rstrip('\n'))
             if i + 1 >= n:
                 break
-    return pd.DataFrame({'line': lines})
+    print(pd.DataFrame({'line': lines}))
 
 def read_csv_custom(filepath, nrows=None, sep=None):
     """
@@ -537,6 +539,183 @@ def top_accounts_by_transactions(df: pd.DataFrame,
     )
 
     return outbound_df, inbound_df, min_date, max_date
+
+def convert_column(
+    df: pd.DataFrame,
+    column: str,
+    target_dtype: str,
+    *,
+    inplace: bool = False,
+    datetime_format: Optional[str] = None,   # e.g. "%Y-%m-%d %H:%M:%S"
+    utc: bool = False,
+    max_examples: int = 20
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Try to convert `df[column]` to `target_dtype` and report failures.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+    column : str
+        Column name to convert.
+    target_dtype : str
+        One of: "int", "Int64", "float", "bool", "datetime", "string", "category".
+        - "int"   -> numpy int64 (fails on NA); use "Int64" for nullable integer.
+        - "float" -> float64
+        - "bool"  -> maps common truthy/falsey strings/numbers
+        - "datetime" -> pandas datetime64[ns] (optionally `format` and `utc`)
+        - "string"   -> pandas' nullable string dtype
+        - "category" -> pandas category
+    inplace : bool
+        If True, modifies `df`; otherwise works on a copy.
+    datetime_format : str or None
+        Optional strptime-like format when target is "datetime".
+    utc : bool
+        If True and target is "datetime", localizes/convert to UTC.
+    max_examples : int
+        Max number of (index, value) examples included in the report.
+
+    Returns
+    -------
+    (df_out, report) : (pd.DataFrame, dict)
+        df_out: DataFrame with the converted column (or not, if everything failed).
+        report: {
+            'success': bool,
+            'column': str,
+            'target_dtype': str,
+            'converted_dtype': str,
+            'n_rows': int,
+            'n_failed': int,
+            'failure_rate': float,
+            'failed_examples': list[(index, original_value)],
+            'failed_value_counts': dict[value -> count],  # top offenders
+            'notes': str
+        }
+    """
+    if column not in df.columns:
+        raise ValueError(f"Column '{column}' not found in DataFrame.")
+
+    # Work on a copy unless told otherwise
+    out = df if inplace else df.copy()
+
+    # Original series and non-null mask (for failure detection)
+    s = out[column]
+    notna = s.notna()
+
+    failed_mask = pd.Series(False, index=s.index)
+    converted = None
+    notes = []
+
+    t = target_dtype.lower()
+
+    try:
+        if t in ("int", "int64"):
+            # Use to_numeric first (coerce invalids to NaN), then cast
+            tmp = pd.to_numeric(s, errors="coerce")
+            failed_mask = notna & tmp.isna()
+            if t == "int":
+                if tmp.isna().any():
+                    # Cannot cast floats with NaN to numpy int; report and keep nullable Int64
+                    notes.append("Nulls present after coercion; used pandas 'Int64' to retain nulls.")
+                    converted = tmp.astype("Int64")
+                else:
+                    converted = tmp.astype(np.int64)
+            else:
+                converted = tmp.astype("Int64")
+
+        elif t in ("float", "float64"):
+            tmp = pd.to_numeric(s, errors="coerce")
+            failed_mask = notna & tmp.isna()
+            converted = tmp.astype(float)
+
+        elif t in ("bool", "boolean"):
+            # Normalize to strings for robust mapping, but accept numeric 1/0 as well.
+            truthy = {"true", "t", "yes", "y", "1"}
+            falsey = {"false", "f", "no", "n", "0"}
+
+            def to_bool(val):
+                if pd.isna(val):
+                    return pd.NA
+                if isinstance(val, (int, np.integer, float, np.floating)):
+                    if pd.isna(val):
+                        return pd.NA
+                    if val == 1:
+                        return True
+                    if val == 0:
+                        return False
+                sval = str(val).strip().lower()
+                if sval in truthy:
+                    return True
+                if sval in falsey:
+                    return False
+                return "FAIL"
+
+            mapped = s.map(to_bool)
+            failed_mask = mapped.eq("FAIL")
+            # Replace "FAIL" with NA for a clean nullable boolean dtype
+            mapped = mapped.where(~failed_mask, pd.NA)
+            converted = mapped.astype("boolean")
+
+        elif t == "datetime":
+            tmp = pd.to_datetime(s, errors="coerce", format=datetime_format, utc=utc)
+            failed_mask = notna & tmp.isna()
+            converted = tmp
+
+        elif t in ("string", "str"):
+            # Pandas nullable string dtype
+            converted = s.astype("string")
+
+        elif t == "category":
+            converted = s.astype("category")
+
+        else:
+            raise ValueError(
+                "Unsupported target_dtype. "
+                "Use one of: 'int','Int64','float','bool','datetime','string','category'."
+            )
+
+        # Assign back
+        out[column] = converted
+
+    except Exception as e:
+        # Unexpected conversion error (schema/engine issue)
+        notes.append(f"Unexpected error during conversion: {e}")
+        # Mark all non-null as failed
+        failed_mask = notna.copy()
+
+    # Build the report
+    n_rows = len(s)
+    n_failed = int(failed_mask.sum())
+    failure_rate = float(n_failed / n_rows) if n_rows else 0.0
+
+    # Examples & offender counts
+    failed_examples = []
+    if n_failed:
+        # Collect up to `max_examples` (index, original_value)
+        bad_idx = failed_mask[failed_mask].index[:max_examples]
+        failed_examples = [(idx, df.loc[idx, column]) for idx in bad_idx]  # original values
+
+        # Count top failing raw values
+        failed_values = df.loc[failed_mask, column]
+        failed_value_counts = failed_values.value_counts(dropna=False).head(20).to_dict()
+    else:
+        failed_value_counts = {}
+
+    report = {
+        "success": n_failed == 0,
+        "column": column,
+        "target_dtype": target_dtype,
+        "converted_dtype": str(out[column].dtype),
+        "n_rows": n_rows,
+        "n_failed": n_failed,
+        "failure_rate": failure_rate,
+        "failed_examples": failed_examples,
+        "failed_value_counts": failed_value_counts,
+        "notes": "; ".join(notes) if notes else "",
+    }
+
+    return out, report
+
 
 
 
