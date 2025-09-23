@@ -11,18 +11,17 @@ import os
 
 #print(df['Timestamp'].astype('datetime64[ns]').dt.date.unique())
 
-
 # save_df_to_csv(df,"susp_acc.csv", newFolder)
 # print("oki!")
 
-df = read_csv_custom(filePath, nrows=10000)
-top_outbound, top_inbound = top_accounts_by_transactions(df, top_n=10)
+inspect_csv_file(filePath)
 
-print("Top outbound accounts:")
-print(top_outbound)
+# df = read_csv_custom(filePath, nrows=300000)
+# outbound, inbound, min_d, max_d = top_accounts_by_transactions(df)
+# print("Outbound top accounts:\n", outbound)
+# print("Inbound top accounts:\n", inbound)
+# print(f"Data covers from {min_d} to {max_d}")
 
-print("\nTop inbound accounts:")
-print(top_inbound)
 # #df = df.where(df['Account'] == '100428660')
 #df = df.dropna(how='all') 
 

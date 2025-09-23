@@ -3,6 +3,7 @@ import csv
 import seaborn as sns
 import matplotlib.pyplot as plt
 import os
+import re
 
 def make_df_from_file(file_path, column_name):
     df = pd.read_csv(file_path, sep=';')
@@ -166,57 +167,307 @@ def create_gephi_files_banks(df: pd.DataFrame, folder_path: str):
     edges.to_csv(edges_file, index=False)
     return nodes_file, edges_file
 
-def inspect_csv_file(file_path):
+def inspect_csv_file(
+    file_path,
+    *,
+    encoding="utf-8",
+    prefer_newline=None,
+    delimiters=(",", ";", "\t"),
+    na_values=None,
+    infer_sample_rows=200_000,
+    use_sniffer=True,
+    strict_lengths=False
+):
     """
-    Inspect a CSV file and print information about it without loading it into memory.
-    Prints:
-      - Number of lines
-      - Detected column separator
-      - Number of columns (from header)
-    Returns a dictionary with this information.
-    """
-    import os
+    Inspect a CSV file with minimal memory usage.
 
-    info = {}
-    separators = [',', ';', '\t']
-    sep_names = {',': 'comma (,)', ';': 'semicolon (;)', '\t': 'tab (\\t)'}
-    detected_sep = None
-    num_columns = None
-    line_count = 0
+    Prints/returns:
+      - Number of lines (including header)
+      - Detected column separator
+      - Number of columns
+      - Column-wise missing counts and percentages
+      - Column-wise inferred data type (from a sample)
+    
+    Parameters
+    ----------
+    file_path : str
+        Path to the CSV file.
+    encoding : str
+        Text encoding for the file (default: 'utf-8').
+    prefer_newline : str | None
+        If given ('\n' or '\r\n'), force this newline when reading, else auto.
+    delimiters : tuple[str]
+        Candidate delimiters to consider.
+    na_values : set[str] | None
+        Strings to treat as missing (case-insensitive). If None, uses a default set.
+    infer_sample_rows : int
+        Max number of data rows to use for type inference (keeps runtime bounded).
+        Missing-value counts still scan the WHOLE file.
+    use_sniffer : bool
+        Use csv.Sniffer to detect delimiter (falls back to heuristic if it fails).
+    strict_lengths : bool
+        If True, rows with wrong number of columns raise; otherwise they’re counted as malformed.
+
+    Returns
+    -------
+    dict
+        {
+          'file': str,
+          'line_count': int,
+          'separator': str,             # human-friendly name
+          'delimiter': str,             # actual delimiter char
+          'num_columns': int,
+          'columns': list[str],
+          'data_rows': int,
+          'malformed_rows': int,
+          'columns_info': {
+              col_name: {
+                 'missing_count': int,
+                 'missing_pct': float,   # 0..100
+                 'non_null_count': int,
+                 'inferred_dtype': str   # 'int', 'float', 'bool', 'datetime', 'string'
+              },
+              ...
+          }
+        }
+    """
+
 
     if not os.path.isfile(file_path):
         print(f"File not found: {file_path}")
-        return {'error': 'File not found'}
+        return {'error': 'File not found', 'file': file_path}
 
+    # Reasonable defaults for NA tokens (case-insensitive match)
+    if na_values is None:
+        na_values = {
+            "", "na", "n/a", "nan", "null", "none", "?", "-", "--"
+        }
+
+    # Helper: human label for delimiter
+    sep_names = {',': 'comma (,)', ';': 'semicolon (;)', '\t': 'tab (\\t)'}
+    sep_label = lambda d: sep_names.get(d, repr(d))
+
+    # --- Step 1: Read a sample to detect delimiter + header robustly ---
+    # Read a small chunk for sniffer and to avoid loading entire file
     try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            # Read the first line (header) to detect separator and columns
-            header = file.readline()
-            line_count = 1 if header else 0
+        with open(file_path, 'r', encoding=encoding, newline=prefer_newline) as fh:
+            sample = fh.read(1024 * 64)  # 64KB
+            if not sample:
+                print("Empty file.")
+                return {
+                    'file': file_path,
+                    'line_count': 0,
+                    'separator': None,
+                    'delimiter': None,
+                    'num_columns': 0,
+                    'columns': [],
+                    'data_rows': 0,
+                    'malformed_rows': 0,
+                    'columns_info': {}
+                }
+    except Exception as e:
+        print(f"Error opening file: {e}")
+        return {'error': str(e), 'file': file_path}
 
-            # Detect separator by which one splits header into most columns
-            sep_counts = {sep: header.count(sep) for sep in separators}
-            detected_sep = max(sep_counts, key=sep_counts.get)
-            num_columns = header.count(detected_sep) + 1 if header else 0
+    # Detect delimiter
+    delimiter = None
+    if use_sniffer:
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters="".join(delimiters))
+            delimiter = dialect.delimiter
+        except Exception:
+            delimiter = None
 
-            # Count remaining lines efficiently
-            for _ in file:
-                line_count += 1
+    if delimiter is None:
+        # Heuristic: choose the candidate that yields most splits on the first (likely header) line
+        first_line = sample.splitlines()[0] if sample else ""
+        counts = {d: first_line.count(d) for d in delimiters}
+        delimiter = max(counts, key=counts.get)
 
-        info['line_count'] = line_count
-        info['separator'] = sep_names[detected_sep]
-        info['num_columns'] = num_columns
+    # Now parse header properly using csv so quoted fields are handled
+    with open(file_path, 'r', encoding=encoding, newline=prefer_newline) as fh:
+        reader = csv.reader(fh, delimiter=delimiter)
+        try:
+            header = next(reader, None)
+        except Exception as e:
+            print(f"Failed to read header: {e}")
+            return {'error': f'Failed to read header: {e}', 'file': file_path}
 
+        if header is None:
+            print("No header found.")
+            return {
+                'file': file_path,
+                'line_count': 0,
+                'separator': sep_label(delimiter),
+                'delimiter': delimiter,
+                'num_columns': 0,
+                'columns': [],
+                'data_rows': 0,
+                'malformed_rows': 0,
+                'columns_info': {}
+            }
+
+        columns = [h.strip() for h in header]
+        num_columns = len(columns)
+
+        # --- Step 2: Initialize stats structures ---
+        line_count = 1  # header included
+        data_rows = 0
+        malformed_rows = 0
+
+        # Missing counters for entire file
+        missing_counts = [0] * num_columns
+        non_null_counts = [0] * num_columns
+
+        # Type inference flags based on sample
+        # We track what each column COULD be; if a value contradicts, we relax to a wider type
+        could_be_int = [True] * num_columns
+        could_be_float = [True] * num_columns
+        could_be_bool = [True] * num_columns
+        could_be_datetime = [True] * num_columns
+
+        # Simple datetime pattern checks (ISO-like); avoids heavy parsers for speed
+        # Matches: YYYY-MM-DD or YYYY-MM-DD HH:MM[:SS][.ms][+TZ/Z]
+        date_re = re.compile(
+            r"^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$"
+        )
+
+        def is_na(val: str) -> bool:
+            return (val.strip().lower() in na_values)
+
+        def looks_int(s: str) -> bool:
+            s = s.strip()
+            if s == "": return False
+            # allow leading +/-
+            if s[0] in "+-":
+                s = s[1:]
+            return s.isdigit()
+
+        def looks_float(s: str) -> bool:
+            # accept standard floats like -12.3, 1e6, .5, 5.
+            s = s.strip()
+            if s == "": return False
+            try:
+                float(s)
+                return True
+            except Exception:
+                return False
+
+        BOOL_TOKENS = {
+            "true", "false", "1", "0", "yes", "no", "y", "n", "t", "f"
+        }
+        def looks_bool(s: str) -> bool:
+            return s.strip().lower() in BOOL_TOKENS
+
+        def looks_datetime(s: str) -> bool:
+            return bool(date_re.match(s.strip()))
+
+        # --- Step 3: Stream rows once (low memory), count missing across ALL rows,
+        #             infer types using ONLY the first `infer_sample_rows` data rows ---
+        for row_idx, row in enumerate(reader, start=1):
+            line_count += 1
+            # Enforce column length (optionally)
+            if len(row) != num_columns:
+                malformed_rows += 1
+                if strict_lengths:
+                    raise ValueError(
+                        f"Row {row_idx} has {len(row)} columns; expected {num_columns}"
+                    )
+                # normalize length for counting by padding/truncating
+                if len(row) < num_columns:
+                    row = list(row) + [""] * (num_columns - len(row))
+                else:
+                    row = row[:num_columns]
+
+            data_rows += 1
+
+            # Column-wise missing/non-null counts
+            for j, val in enumerate(row):
+                if is_na(val):
+                    missing_counts[j] += 1
+                else:
+                    non_null_counts[j] += 1
+
+            # Type inference limited to a sample of rows for speed on huge files
+            if data_rows <= infer_sample_rows:
+                for j, val in enumerate(row):
+                    v = val.strip()
+                    if v == "" or is_na(v):
+                        # missing values don't inform type
+                        continue
+
+                    # If it already cannot be an int, don't bother re-checking
+                    if could_be_int[j] and not looks_int(v):
+                        could_be_int[j] = False
+                    # Float is superset of int; if it's not float-like, mark False
+                    if could_be_float[j] and not (looks_float(v) or looks_int(v)):
+                        could_be_float[j] = False
+                    if could_be_bool[j] and not looks_bool(v):
+                        could_be_bool[j] = False
+                    if could_be_datetime[j] and not looks_datetime(v):
+                        could_be_datetime[j] = False
+
+        # --- Step 4: Decide dtype per column from flags (most specific first) ---
+        inferred_types = []
+        for j in range(num_columns):
+            # Order: bool -> int -> float -> datetime -> string
+            # (you can reorder if you prefer dates over numbers when ambiguous)
+            if could_be_bool[j] and non_null_counts[j] > 0:
+                inferred_types.append("bool")
+            elif could_be_int[j] and non_null_counts[j] > 0:
+                inferred_types.append("int")
+            elif could_be_float[j] and non_null_counts[j] > 0:
+                inferred_types.append("float")
+            elif could_be_datetime[j] and non_null_counts[j] > 0:
+                inferred_types.append("datetime")
+            else:
+                inferred_types.append("string")
+
+        # --- Step 5: Build results ---
+        columns_info = {}
+        for name, miss, nonnull, dtype_ in zip(
+            columns, missing_counts, non_null_counts, inferred_types
+        ):
+            total = miss + nonnull
+            pct = (miss / total * 100.0) if total else 0.0
+            columns_info[name] = {
+                "missing_count": miss,
+                "missing_pct": round(pct, 4),
+                "non_null_count": nonnull,
+                "inferred_dtype": dtype_,
+            }
+
+        info = {
+            "file": file_path,
+            "line_count": line_count,                # includes header
+            "separator": sep_label(delimiter),
+            "delimiter": delimiter,
+            "num_columns": num_columns,
+            "columns": columns,
+            "data_rows": data_rows,                  # excludes header
+            "malformed_rows": malformed_rows,
+            "columns_info": columns_info,
+        }
+
+        # --- Friendly printout ---
         print(f"File: {file_path}")
-        print(f"Number of lines: {line_count}")
-        print(f"Detected column separator: {sep_names[detected_sep]}")
-        print(f"Number of columns (from header): {num_columns}")
+        print(f"Number of lines (incl. header): {line_count}")
+        print(f"Detected column separator: {sep_label(delimiter)}")
+        print(f"Number of columns: {num_columns}")
+        print(f"Data rows: {data_rows}")
+        if malformed_rows:
+            print(f"⚠️ Malformed rows (wrong # of columns): {malformed_rows}")
+
+        print("\nColumn summary:")
+        for col in columns:
+            c = columns_info[col]
+            print(
+                f"  - {col}: dtype={c['inferred_dtype']}, "
+                f"missing={c['missing_count']} ({c['missing_pct']}%), "
+                f"non-null={c['non_null_count']}"
+            )
 
         return info
-
-    except Exception as e:
-        print(f"Error reading file: {e}")
-        return {'error': str(e)}
 
 def create_new_folder(base_path, folder_name):
     """
@@ -231,58 +482,62 @@ def create_new_folder(base_path, folder_name):
     return new_folder_path
 
 def top_accounts_by_transactions(df: pd.DataFrame,
-                                 top_n: int = 100,
+                                 top_n: int = 10,
                                  source_col: str = "Account",
-                                 target_col: str = "Account.1"):
+                                 target_col: str = "Account.1",
+                                 timestamp_col: str = "Timestamp"):
     """
-    Count transactions separately for outbound and inbound roles.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Transactions data.
-    top_n : int
-        Number of accounts to return for each direction.
-    source_col : str
-        Column name with the sending account.
-    target_col : str
-        Column name with the receiving account.
-
-    Returns
-    -------
-    outbound_df : pd.DataFrame
-        Columns ['Account', 'outbound_tx_count'], top_n rows sorted descending.
-    inbound_df : pd.DataFrame
-        Columns ['Account', 'inbound_tx_count'], top_n rows sorted descending.
-
-    Notes
-    -----
-    - Self-transfers (source == target on the same row) count once for outbound
-      and once for inbound, since they are both a send and receive event.
-    - NaN values are ignored.
+    Count transactions separately for outbound and inbound roles,
+    and return min/max transaction dates (computed from `timestamp_col`).
     """
 
-    # Top outbound accounts
-    outbound_df = (
+    # ---- 0) Validate columns
+    missing = [c for c in [source_col, target_col] if c not in df.columns]
+    if missing:
+        raise KeyError(f"Missing expected column(s): {missing}. Got: {list(df.columns)}")
+
+    # ---- 1) Timestamp min/max (only touch the timestamp col)
+    min_date = max_date = None
+    if timestamp_col in df.columns:
+        ts = pd.to_datetime(df[timestamp_col], errors="coerce")
+        if ts.notna().any():
+            min_date = ts.min()
+            max_date = ts.max()
+
+    # ---- 2) Work on CLEANED string views of account columns
+    # Strip whitespace, drop empties, keep as strings to prevent accidental datetime coercion
+    src = (
         df[source_col]
+        .astype(str)
+        .str.strip()
+        .replace({"": pd.NA, "nan": pd.NA, "NaN": pd.NA})
         .dropna()
-        .value_counts()
-        .head(top_n)
-        .rename_axis("Account")
-        .reset_index(name="outbound_tx_count")
     )
-
-    # Top inbound accounts
-    inbound_df = (
+    tgt = (
         df[target_col]
+        .astype(str)
+        .str.strip()
+        .replace({"": pd.NA, "nan": pd.NA, "NaN": pd.NA})
         .dropna()
-        .value_counts()
-        .head(top_n)
-        .rename_axis("Account")
-        .reset_index(name="inbound_tx_count")
     )
 
-    return outbound_df, inbound_df
+    # ---- 3) Counts
+    outbound_df = (
+        src.value_counts()
+           .head(top_n)
+           .rename_axis("Account")
+           .reset_index(name="outbound_tx_count")
+    )
+
+    inbound_df = (
+        tgt.value_counts()
+           .head(top_n)
+           .rename_axis("Account")
+           .reset_index(name="inbound_tx_count")
+    )
+
+    return outbound_df, inbound_df, min_date, max_date
+
 
 
 
