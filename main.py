@@ -2,6 +2,7 @@ from paths_and_stuff import *
 from helpers import *
 from simple_aml_functions import *
 import os
+import pandas as pd
 
 #print(get_file_head_as_df(filePath))
 
@@ -14,24 +15,47 @@ import os
 # save_df_to_csv(df,"susp_acc.csv", newFolder)
 # print("oki!")
 
-#get_file_head_as_df(filePath)
-#inspect_csv_file(filePath)
-df = read_csv_custom(filePath, nrows=500000)
-df2, rep = convert_column(df, "Timestamp", "datetime", datetime_format="%Y-%m-%d %H:%M:%S")
-print(rep)
+
+# df = read_csv_custom(filePath, nrows=500000)
+# df2, rep = convert_column(df, "Timestamp", "datetime", datetime_format="%Y-%m-%d %H:%M:%S")
+# print(rep)
+
+# top_accounts_by_transactions(df)
 
 
-# df = read_csv_custom(filePath, nrows=300000)
+
+# unique_values = df['Timestamp'].str[:10]
+# unique_values = unique_values.unique()
+# unique_values = unique_values.size
+
+#df = read_csv_custom(filePath, nrows=50000)
 # outbound, inbound, min_d, max_d = top_accounts_by_transactions(df)
 # print("Outbound top accounts:\n", outbound)
 # print("Inbound top accounts:\n", inbound)
 # print(f"Data covers from {min_d} to {max_d}")
 
-# #df = df.where(df['Account'] == '100428660')
+
+#df = read_csv_custom(filePath, nrows=300000).dropna(subset=['Timestamp', 'Account'])
+newFolder = create_new_folder(folderPath, "2025-09-26")
+df = read_csv_custom(filePath, nrows=500000)
+# = univariate_eda(df, "Timestamp", approx=True)
+
+# Basic usage (returns CSV text)
+#csv_report = univariate_eda(df, "Amount Paid", approx=True)
+
+# Or write directly to disk
+_ = univariate_eda(df, "Account", write_path= newFolder + "/eda_PaymentFormat.csv", top_k=15)
+
+
+print("okidoki!")
+
+#print("get'em numbers: ", df.head()) 
+
+#print(inspect_csv_file(filePath))
+
 #df = df.dropna(how='all') 
 
-# print(df.head())s
-# quit()
+
 
 #df = detect_fan_out_groups_percentile(df)
 

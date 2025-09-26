@@ -6,6 +6,8 @@ import os
 import re
 import numpy as np
 from typing import Tuple, Dict, Any, Optional
+from typing import Optional
+import numpy as np
 
 def make_df_from_file(file_path, column_name):
     df = pd.read_csv(file_path, sep=';')
@@ -717,6 +719,270 @@ def convert_column(
     return out, report
 
 
+def univariate_eda(
+    df: pd.DataFrame,
+    column: str,
+    top_k: int = 20,
+    write_path: Optional[str] = None,
+    approx: bool = False,
+    sample_size: int = 1_000_000,
+    iqr_outlier_factor: float = 1.5,
+    z_thresh: float = 3.0,
+) -> str:
+    """
+    Compute a univariate EDA report for `df[column]`.
+    Returns the report as a CSV string. Optionally writes to `write_path`.
 
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input dataframe (can be large).
+    column : str
+        Column name to analyze.
+    top_k : int, default 20
+        Number of top category levels to include for categorical/text features.
+    write_path : str or None
+        If provided, the CSV is also written to this path.
+    approx : bool, default False
+        If True, uses a sample (up to `sample_size`) for some heavy computations
+        (unique counts, quantiles, entropy, value counts).
+    sample_size : int, default 1_000_000
+        Sample size to use when `approx=True` and the column has more rows.
+    iqr_outlier_factor : float, default 1.5
+        Multiplier for IQR rule outliers.
+    z_thresh : float, default 3.0
+        Z-score threshold for outlier counting in numeric columns.
 
+    Notes
+    -----
+    - Keeps memory overhead low by operating directly on the Series where possible.
+    - For extremely high-cardinality categoricals, set `approx=True`.
+    - The CSV is "long-form": each row is a metric. For categorical/text,
+      top-k levels are appended as rows with their counts and percents.
+    """
 
+    if column not in df.columns:
+        raise KeyError(f"Column '{column}' not found in DataFrame.")
+
+    s = df[column]
+    n_total = len(s)
+
+    # Optional sampling for heavy ops
+    if approx and n_total > sample_size:
+        s_work = s.sample(sample_size, random_state=42)
+        note_sampling = f"sampled={sample_size} of {n_total}"
+    else:
+        s_work = s
+        note_sampling = "full"
+
+    # Basic / universal metrics
+    report_rows = []
+    add = report_rows.append
+
+    dtype = s.dtype
+    n_missing = int(s.isna().sum())
+    pct_missing = (n_missing / n_total * 100.0) if n_total else np.nan
+
+    # unique count may be heavy; use sample if approx
+    try:
+        n_unique = int(s_work.nunique(dropna=True))
+        approx_unique = approx and n_total > len(s_work)
+    except Exception:
+        n_unique = np.nan
+        approx_unique = True
+
+    pct_unique = (n_unique / (len(s_work) - s_work.isna().sum()) * 100.0) if len(s_work) else np.nan
+
+    mem_bytes = int(s.memory_usage(deep=True))
+    mem_mb = mem_bytes / (1024 ** 2)
+
+    # Heuristic logical type
+    logical = None
+    if pd.api.types.is_bool_dtype(dtype):
+        logical = "boolean"
+    elif pd.api.types.is_numeric_dtype(dtype):
+        logical = "numeric"
+    elif pd.api.types.is_datetime64_any_dtype(dtype):
+        logical = "datetime"
+    elif pd.api.types.is_categorical_dtype(dtype):
+        logical = "categorical"
+    else:
+        # object/string -> decide between categorical-ish vs free text
+        # If many uniques relative to non-null -> treat as text
+        nn = len(s_work) - int(s_work.isna().sum())
+        logical = "text" if (nn > 0 and n_unique/nn > 0.5) else "categorical"
+
+    add({"metric": "column", "value": column})
+    add({"metric": "dtype", "value": str(dtype)})
+    add({"metric": "logical_type", "value": logical})
+    add({"metric": "rows_total", "value": n_total})
+    add({"metric": "missing_count", "value": n_missing})
+    add({"metric": "missing_pct", "value": round(pct_missing, 6)})
+    add({"metric": "unique_count", "value": n_unique})
+    add({"metric": "unique_pct", "value": round(pct_unique, 6)})
+    add({"metric": "unique_count_approx", "value": approx_unique})
+    add({"metric": "memory_mb", "value": round(mem_mb, 6)})
+    add({"metric": "workload_scope", "value": note_sampling})
+
+    # ---- Numeric metrics ----
+    if logical == "numeric":
+        s_num = pd.to_numeric(s_work, errors="coerce")
+        valid = s_num.dropna()
+        n_valid = len(valid)
+
+        if n_valid > 0:
+            desc = valid.describe(percentiles=[0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99])
+            q25, q50, q75 = desc["25%"], desc["50%"], desc["75%"]
+            iqr = q75 - q25
+            mean = valid.mean()
+            std = valid.std(ddof=1)
+            mad = (valid - q50).abs().median()
+            skew = valid.skew()
+            kurt = valid.kurtosis()
+
+            # Outlier counts
+            iqr_low = q25 - iqr_outlier_factor * iqr
+            iqr_high = q75 + iqr_outlier_factor * iqr
+            out_iqr = int(((valid < iqr_low) | (valid > iqr_high)).sum())
+
+            if std and std > 0:
+                z_scores = (valid - mean) / std
+                out_z = int((np.abs(z_scores) > z_thresh).sum())
+            else:
+                out_z = 0
+
+            zeros = int((valid == 0).sum())
+            pos = int((valid > 0).sum())
+            neg = int((valid < 0).sum())
+
+            # Write metrics
+            add({"metric": "count_valid", "value": n_valid})
+            for k in ["min", "1%", "5%", "25%", "50%", "75%", "95%", "99%", "max", "mean", "std"]:
+                key_map = {
+                    "min": "min", "1%": "q01", "5%": "q05", "25%": "q25",
+                    "50%": "median", "75%": "q75", "95%": "q95", "99%": "q99",
+                    "max": "max", "mean": "mean", "std": "std"
+                }
+                v = desc[k] if k in desc.index else np.nan
+                add({"metric": key_map[k], "value": round(float(v), 12)})
+
+            add({"metric": "mad", "value": round(float(mad), 12)})
+            add({"metric": "iqr", "value": round(float(iqr), 12)})
+            add({"metric": "skew", "value": round(float(skew), 12) if pd.notna(skew) else np.nan})
+            add({"metric": "kurtosis_fisher", "value": round(float(kurt), 12) if pd.notna(kurt) else np.nan})
+            add({"metric": "zeros_count", "value": zeros})
+            add({"metric": "positive_count", "value": pos})
+            add({"metric": "negative_count", "value": neg})
+            add({"metric": "outliers_iqr_count", "value": out_iqr})
+            add({"metric": "outliers_zscore_count", "value": out_z})
+        else:
+            add({"metric": "count_valid", "value": 0})
+
+    # ---- Datetime metrics ----
+    elif logical == "datetime":
+        s_dt = pd.to_datetime(s_work, errors="coerce")
+        valid = s_dt.dropna()
+        n_valid = len(valid)
+        add({"metric": "count_valid", "value": n_valid})
+        if n_valid > 0:
+            vmin, vmax = valid.min(), valid.max()
+            span = vmax - vmin
+            add({"metric": "min_datetime", "value": str(vmin)})
+            add({"metric": "max_datetime", "value": str(vmax)})
+            add({"metric": "span_days", "value": round(span.total_seconds() / 86400.0, 6)})
+
+            # Lightweight calendar breakdowns
+            try:
+                # Weekday distribution (top)
+                wd = valid.dt.weekday.value_counts(dropna=False)
+                wd_top = wd.head(min(7, top_k))
+                for i, (wd_i, cnt) in enumerate(wd_top.items(), start=1):
+                    add({"metric": "weekday_top", "rank": i, "key": int(wd_i), "count": int(cnt),
+                         "pct": round(cnt / n_valid * 100.0, 6)})
+            except Exception:
+                pass
+
+            try:
+                m = valid.dt.to_period("M").astype(str).value_counts()
+                m_top = m.head(min(12, top_k))
+                for i, (mon, cnt) in enumerate(m_top.items(), start=1):
+                    add({"metric": "month_top", "rank": i, "key": mon, "count": int(cnt),
+                         "pct": round(cnt / n_valid * 100.0, 6)})
+            except Exception:
+                pass
+
+    # ---- Boolean metrics ----
+    elif logical == "boolean":
+        valid = s_work.dropna()
+        n_valid = len(valid)
+        true_cnt = int((valid == True).sum())  # noqa: E712
+        false_cnt = int((valid == False).sum())  # noqa: E712
+        add({"metric": "count_valid", "value": n_valid})
+        add({"metric": "true_count", "value": true_cnt})
+        add({"metric": "false_count", "value": false_cnt})
+        if n_valid:
+            add({"metric": "true_pct", "value": round(true_cnt / n_valid * 100.0, 6)})
+            add({"metric": "false_pct", "value": round(false_cnt / n_valid * 100.0, 6)})
+
+    # ---- Categorical / Text metrics ----
+    if logical in {"categorical", "text"}:
+        valid = s_work.dropna()
+        n_valid = len(valid)
+
+        # Value counts (top_k); sample if approx for speed
+        vc_source = valid
+        if approx and len(valid) > sample_size:
+            vc_source = valid.sample(sample_size, random_state=42)
+
+        vc = vc_source.value_counts(dropna=False)
+        top = vc.head(top_k)
+        denom = float(len(vc_source)) if len(vc_source) else 1.0
+
+        for i, (val, cnt) in enumerate(top.items(), start=1):
+            add({
+                "metric": "top_value",
+                "rank": i,
+                "key": str(val),
+                "count": int(cnt),
+                "pct": round(cnt / denom * 100.0, 6),
+            })
+
+        # Entropy (Shannon) on observed distribution
+        try:
+            p = (vc / denom).astype(float)
+            entropy = float(-(p * np.log2(p + 1e-12)).sum())
+            add({"metric": "shannon_entropy_bits", "value": round(entropy, 12)})
+        except Exception:
+            add({"metric": "shannon_entropy_bits", "value": np.nan})
+
+        # Text length stats if looks like text
+        if logical == "text":
+            try:
+                lens = valid.astype(str).str.len()
+                if len(lens):
+                    add({"metric": "text_len_min", "value": int(lens.min())})
+                    add({"metric": "text_len_q25", "value": float(lens.quantile(0.25))})
+                    add({"metric": "text_len_median", "value": float(lens.median())})
+                    add({"metric": "text_len_mean", "value": float(lens.mean())})
+                    add({"metric": "text_len_q75", "value": float(lens.quantile(0.75))})
+                    add({"metric": "text_len_q95", "value": float(lens.quantile(0.95))})
+                    add({"metric": "text_len_max", "value": int(lens.max())})
+            except Exception:
+                pass
+
+    # Finalize as DataFrame -> CSV string
+    report_df = pd.DataFrame(report_rows)
+
+    # Order columns nicely; keep any extras (rank/key/count/pct) to the right
+    base_cols = ["metric", "value"]
+    extra_cols = [c for c in report_df.columns if c not in base_cols]
+    # Put common extras in a friendly order
+    preferred = ["rank", "key", "count", "pct"]
+    ordered_extras = [c for c in preferred if c in extra_cols] + [c for c in extra_cols if c not in preferred]
+    report_df = report_df[base_cols + ordered_extras]
+
+    csv_str = report_df.to_csv(index=False)
+    if write_path:
+        report_df.to_csv(write_path, index=False)
+
+    return csv_str
