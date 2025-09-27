@@ -41,47 +41,91 @@ def get_file_head_as_df(file_path, n=250, encoding='utf-8'):
                 break
     print(pd.DataFrame({'line': lines}))
 
-def read_csv_custom(filepath, nrows=None, sep=None):
+def read_csv_custom(
+    filepath,
+    nrows=None,
+    sep=None,
+    account_cols=("Account", "Account.1"),
+    encoding="utf-8",
+    keep_default_na=False,
+):
     """
     Reads a CSV file into a pandas DataFrame with options:
     - nrows: number of rows to read (None means all)
-    - sep: separator character; if None, auto-detects
-    - Assumes first row is headers
-    - Converts decimals with ',' as decimal separator
-    - Converts date columns to 'yyyy-mm-dd hh:mm:ss' format
-    
-    Returns:
-        pd.DataFrame
+    - sep: delimiter; if None, auto-detects from a small sample
+    - Forces `account_cols` to string and normalizes/strips them
+    - Converts decimals with ',' as decimal separator (for non-account cols)
+    - Attempts to parse object columns to datetimes and format as 'YYYY-MM-DD HH:MM:SS'
     """
-    # Auto-detect separator if not provided
+    # --- 1) Auto-detect separator if not provided ---
     if sep is None:
-        with open(filepath, 'r', newline='', encoding='utf-8') as f:
-            sample = f.read(1024)
-            sniffer = csv.Sniffer()
-            sep = sniffer.sniff(sample).delimiter
-
-    # Read CSV with pandas, specifying decimal=',' to handle decimal commas
-    # Use nrows parameter to limit rows
-    df = pd.read_csv(filepath, sep=sep, decimal=',', nrows=nrows, encoding='utf-8')
-
-    # Attempt to convert columns to appropriate dtypes
-    for col in df.columns:
-        # Try converting to numeric (int or float)
-        df[col] = pd.to_numeric(df[col].str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='ignore') \
-            if df[col].dtype == object else df[col]
-
-    # For date columns, try to parse and convert to 'yyyy-mm-dd hh:mm:ss'
-    # We assume date columns contain strings with date-like patterns
-    for col in df.select_dtypes(include=['object']).columns:
         try:
-            parsed_dates = pd.to_datetime(df[col], errors='coerce', dayfirst=False)
-            if parsed_dates.notna().sum() > 0:
-                df[col] = parsed_dates.dt.strftime('%Y-%m-%d %H:%M:%S')
+            with open(filepath, 'r', newline='', encoding=encoding, errors='replace') as f:
+                sample = f.read(4096)
+                sniffer = csv.Sniffer()
+                sep = sniffer.sniff(sample).delimiter
         except Exception:
-            # If parsing fails, leave column as is
+            sep = ';'  # fallback if sniffer fails
+
+    # --- 2) Build dtype mapping to force account cols to string ---
+    dtype_map = {col: "string" for col in account_cols}
+
+    # --- 3) Read CSV robustly ---
+    df = pd.read_csv(
+        filepath,
+        sep=sep,
+        decimal=',',
+        nrows=nrows,
+        encoding=encoding,
+        encoding_errors="replace",
+        dtype=dtype_map,
+        engine="python",
+        on_bad_lines="warn",
+        keep_default_na=keep_default_na
+    )
+
+    # Ensure missing account columns exist
+    present_account_cols = [c for c in account_cols if c in df.columns]
+
+    # --- 4) Normalize/clean account columns ---
+    if present_account_cols:
+        for col in present_account_cols:
+            s = df[col].astype("string")
+            s = s.str.replace(r'[\u200B-\u200D\uFEFF]', '', regex=True)  # remove zero-width chars
+            s = s.str.normalize('NFKC').str.strip()
+            df[col] = s
+
+    # --- 5) Numeric conversion for NON-account object columns ---
+    obj_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
+    numeric_candidates = [c for c in obj_cols if c not in present_account_cols]
+
+    for col in numeric_candidates:
+        converted = pd.to_numeric(df[col], errors='coerce')
+        if converted.notna().sum() == 0:
+            cleaned = (
+                df[col]
+                .str.replace('\u202F', '', regex=False)
+                .str.replace('\u00A0', '', regex=False)
+                .str.replace(' ', '', regex=False)
+            )
+            converted = pd.to_numeric(cleaned, errors='coerce')
+        if converted.notna().sum() > 0:
+            df[col] = converted
+
+    # --- 6) Datetime parsing for NON-account textual columns ---
+    obj_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
+    date_candidates = [c for c in obj_cols if c not in present_account_cols]
+
+    for col in date_candidates:
+        try:
+            parsed = pd.to_datetime(df[col], errors='coerce', dayfirst=False)
+            if parsed.notna().sum() > 0 and parsed.notna().sum() >= 0.5 * len(df[col]):
+                df[col] = parsed.dt.strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
             pass
 
     return df
+
 
 def plot_group_distributions(grouped_df):
     """
@@ -717,7 +761,6 @@ def convert_column(
     }
 
     return out, report
-
 
 def univariate_eda(
     df: pd.DataFrame,
