@@ -126,7 +126,6 @@ def read_csv_custom(
 
     return df
 
-
 def plot_group_distributions(grouped_df):
     """
     Plots histograms and boxplots for unique_recipients and total_amount distributions.

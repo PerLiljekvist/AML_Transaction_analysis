@@ -2,15 +2,15 @@ import pandas as pd
 import matplotlib.pyplot as plt   # <-- fixed import
 from paths_and_stuff import * 
 from helpers import * 
-from anomaly_detection_gettx_for_account import *
+from anomaly_detection_get_tx_for_account import *
 
-newDir = create_new_folder(folderPath, 'accounts_nodes_edges_2025-07-26')
+newDir = create_new_folder(folderPath, 'accounts_nodes_edges_2025-07-27')
 
-outlier_account = "800C365B0"
+outlier_account = "100428738"
 outlier_accounts = [outlier_account]
 
 # Load data (your helper decides how sep is used)
-df = load_rows_for_account(filePath, outlier_account, sep=",")
+df, stats = load_rows_for_account(filePath, outlier_account, sep=",") 
 
 # Parse / cast
 df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')

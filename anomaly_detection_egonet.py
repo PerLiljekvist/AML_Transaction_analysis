@@ -2,10 +2,8 @@ import pandas as pd
 from pathlib import Path
 from paths_and_stuff import * 
 from helpers import * 
-from  anomaly_detection_gettx_for_account import *
+from  anomaly_detection_get_tx_for_account import *
 
-import pandas as pd
-from pathlib import Path
 
 def build_ego_network_for_gephi(
     df: pd.DataFrame,
@@ -146,8 +144,8 @@ def _write_gephi_csvs(nodes_df: pd.DataFrame, edges_df: pd.DataFrame, out_dir: s
 
 
 #--- Example usage ---
-outlier_account = "100428660"
-newDir = create_new_folder(folderPath, 'ego_nodes_edges_2025-09-20')
+outlier_account = "1004286F0"
+newDir = create_new_folder(folderPath, 'ego_nodes_edges_2025-09-20_2')
 
 df = load_rows_for_account(filePath, outlier_account, sep=",")
 

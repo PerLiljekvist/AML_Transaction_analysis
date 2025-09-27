@@ -32,7 +32,7 @@ import pandas as pd
 
 
 newFolder = create_new_folder(folderPath, "2025-09-27")
-df = read_csv_custom(filePath, nrows=500000)
+df = read_csv_custom(filePath, nrows=1000000)
 outbound, inbound, min_d, max_d = top_accounts_by_transactions(df)
 print("Outbound top accounts:\n", outbound)
 print("Inbound top accounts:\n", inbound)
@@ -40,9 +40,6 @@ print(f"Data covers from {min_d} to {max_d}")
 
 # Or write directly to disk
 #_ = univariate_eda(df, "Account", write_path= newFolder + "/eda_account.csv", top_k=15)
-
-
-
 
 #Check distribution: fan-out*****************************************************
 #grouped_df = preprocess_and_group_fan_out(df, time_freq='10H')
