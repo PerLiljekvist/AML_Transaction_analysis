@@ -1,8 +1,9 @@
 import pandas as pd
+from collections import deque, defaultdict
 from pathlib import Path
 from paths_and_stuff import * 
 from helpers import * 
-from  anomaly_detection_get_tx_for_account import *
+from anomaly_detection_get_tx_for_account import *
 
 
 def build_ego_network_for_gephi(
@@ -15,13 +16,15 @@ def build_ego_network_for_gephi(
     amount_pref: str = "paid",   # "paid", "received", or "both_sum"
     out_dir: str = ".",
     nodes_fname: str = "nodes.csv",
-    edges_fname: str = "edges.csv"
+    edges_fname: str = "edges.csv",
+    k: int = 1,
+    include_alter_alter_edges: bool = True
 ):
     """
-    Build an undirected ego network centered on `suspicious_account` and export:
-      - nodes.csv : one column 'Id' listing counterparties only (plain node list)
+    Build a k-step undirected ego network centered on `suspicious_account` and export:
+      - nodes.csv : one column 'Id' listing nodes (excluding the ego itself)
       - edges.csv : columns 'Source','Target','Type','tx_count','amount_sum'
-        * exactly one undirected edge per pair
+        * exactly one undirected edge per pair within the k-step ball
         * tx_count = number of tx between the two nodes (both directions)
         * amount_sum = aggregated money over those tx (see amount_pref)
 
@@ -30,104 +33,129 @@ def build_ego_network_for_gephi(
       - "received"   -> sum of Amount Received (falls back to Paid if Received missing)
       - "both_sum"   -> sum of (Paid + Received) per row (useful if they differ)
 
-    Assumes `df` contains at least the account columns; it can be pre-filtered or not.
-    Self-transfers (source == target) are ignored in the edge list.
+    Notes
+    -----
+    - Reachability is computed on an undirected version of the graph.
+    - Set `include_alter_alter_edges=False` to only keep edges where one endpoint is the ego.
+    - Self-transfers (source == target) are ignored.
     """
+    if k < 1:
+        raise ValueError("k must be >= 1")
+
     # Defensive copy & normalize types
     df = df.copy()
     suspicious_account = str(suspicious_account)
     df[source_col] = df[source_col].astype(str)
     df[target_col] = df[target_col].astype(str)
 
-    # Keep only rows where suspicious appears on either side
-    mask = (df[source_col] == suspicious_account) | (df[target_col] == suspicious_account)
-    ego_df = df.loc[mask].copy()
-
     # Handle empty case early
-    if ego_df.empty:
+    if df.empty:
         nodes_df = pd.DataFrame(columns=["Id"])
         edges_df = pd.DataFrame(columns=["Source", "Target", "Type", "tx_count", "amount_sum"])
         out_path_nodes, out_path_edges = _write_gephi_csvs(nodes_df, edges_df, out_dir, nodes_fname, edges_fname)
         return nodes_df, edges_df, {"nodes_csv": str(out_path_nodes), "edges_csv": str(out_path_edges)}
 
-    # Prepare amount columns as numeric
-    for col in [amount_paid_col, amount_received_col]:
-        if col in ego_df.columns:
-            ego_df[col] = pd.to_numeric(ego_df[col], errors="coerce")
+    # Prepare amount columns as numeric (ensure presence)
+    for col in (amount_paid_col, amount_received_col):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
         else:
-            ego_df[col] = 0.0  # ensure presence
+            df[col] = 0.0
 
     # Choose per-row value used for aggregation
     if amount_pref == "paid":
-        # prefer paid; if NaN then use received
-        ego_df["_value"] = ego_df[amount_paid_col].fillna(0)
-        # if paid is zero but received is non-zero and paid was NaN, add received
-        # simpler: take max of (paid, received) when one is missing—use where both provided equally
-        missing_paid = ego_df[amount_paid_col].isna()
-        ego_df.loc[missing_paid, "_value"] = ego_df.loc[missing_paid, amount_received_col].fillna(0)
+        df["_value"] = df[amount_paid_col]
+        missing_paid = df[amount_paid_col].isna()
+        df.loc[missing_paid, "_value"] = df.loc[missing_paid, amount_received_col]
+        df["_value"] = df["_value"].fillna(0)
     elif amount_pref == "received":
-        missing_recv = ego_df[amount_received_col].isna()
-        ego_df["_value"] = ego_df[amount_received_col].fillna(0)
-        ego_df.loc[missing_recv, "_value"] = ego_df.loc[missing_recv, amount_paid_col].fillna(0)
+        df["_value"] = df[amount_received_col]
+        missing_recv = df[amount_received_col].isna()
+        df.loc[missing_recv, "_value"] = df.loc[missing_recv, amount_paid_col]
+        df["_value"] = df["_value"].fillna(0)
     elif amount_pref == "both_sum":
-        ego_df["_value"] = ego_df[amount_paid_col].fillna(0) + ego_df[amount_received_col].fillna(0)
+        df["_value"] = df[amount_paid_col].fillna(0) + df[amount_received_col].fillna(0)
     else:
         raise ValueError("amount_pref must be one of: 'paid', 'received', 'both_sum'")
 
-    # Build undirected pairs by sorting endpoints per row
-    # Also drop self-transfers for the edge list
-    a = ego_df[source_col]
-    b = ego_df[target_col]
-    u = a.where(a <= b, b)  # lexicographically smaller first
+    # Build undirected endpoint pairs (u,v) with u < v; drop self-loops
+    a = df[source_col]
+    b = df[target_col]
+    u = a.where(a <= b, b)
     v = b.where(a <= b, a)
-
-    pairs = pd.DataFrame({"u": u, "v": v})
-    pairs["_value"] = ego_df["_value"]
-
-    # Remove self-loops (u == v)
+    pairs = pd.DataFrame({"u": u, "v": v, "_value": df["_value"]})
     pairs = pairs.loc[pairs["u"] != pairs["v"]]
 
-    # Aggregate: one row per undirected edge
+    if pairs.empty:
+        nodes_df = pd.DataFrame(columns=["Id"])
+        edges_df = pd.DataFrame(columns=["Source", "Target", "Type", "tx_count", "amount_sum"])
+        out_path_nodes, out_path_edges = _write_gephi_csvs(nodes_df, edges_df, out_dir, nodes_fname, edges_fname)
+        return nodes_df, edges_df, {"nodes_csv": str(out_path_nodes), "edges_csv": str(out_path_edges)}
+
+    # ---- BFS to depth k on undirected graph ----
+    # Adjacency (undirected)
+    adj = defaultdict(set)
+    for uu, vv in pairs[["u", "v"]].itertuples(index=False):
+        adj[uu].add(vv)
+        adj[vv].add(uu)
+
+    # If ego not in graph at all, return empties
+    if suspicious_account not in adj:
+        nodes_df = pd.DataFrame(columns=["Id"])
+        edges_df = pd.DataFrame(columns=["Source", "Target", "Type", "tx_count", "amount_sum"])
+        out_path_nodes, out_path_edges = _write_gephi_csvs(nodes_df, edges_df, out_dir, nodes_fname, edges_fname)
+        return nodes_df, edges_df, {"nodes_csv": str(out_path_nodes), "edges_csv": str(out_path_edges)}
+
+    visited = {suspicious_account}
+    depth = {suspicious_account: 0}
+    q = deque([suspicious_account])
+
+    while q:
+        cur = q.popleft()
+        if depth[cur] == k:
+            continue
+        for nbr in adj[cur]:
+            if nbr not in visited:
+                visited.add(nbr)
+                depth[nbr] = depth[cur] + 1
+                q.append(nbr)
+
+    ego_ball = visited  # includes ego
+    node_set = sorted(n for n in ego_ball if n != suspicious_account)  # exclude ego from nodes.csv
+
+    # ---- Aggregate edges and restrict to the k-step node set ----
+    # Aggregate globally first (fast), then filter to edges fully inside (ego ∪ node_set)
     agg = (
         pairs.groupby(["u", "v"], as_index=False)
-             .agg(tx_count=("u", "size"),
-                  amount_sum=("_value", "sum"))
+             .agg(tx_count=("u", "size"), amount_sum=("_value", "sum"))
     )
 
-    # Build nodes list: counterparties connected to suspicious_account
-    # From original ego_df, take the other side of each row where suspicious appears.
-    cp_from_src = ego_df.loc[ego_df[source_col] == suspicious_account, target_col]
-    cp_from_tgt = ego_df.loc[ego_df[target_col] == suspicious_account, source_col]
-    counterparties = pd.concat([cp_from_src, cp_from_tgt], ignore_index=True)
-    counterparties = (
-        counterparties.dropna()
-        .astype(str)
-        .loc[lambda s: s != suspicious_account]
-        .drop_duplicates()
-        .sort_values()
-        .reset_index(drop=True)
-    )
-    nodes_df = pd.DataFrame({"Id": counterparties})
+    allowed = set(node_set) | {suspicious_account}
+    sub_edges = agg[(agg["u"].isin(allowed)) & (agg["v"].isin(allowed))].copy()
 
-    # Build Gephi-style edges output (only edges touching the suspicious account)
-    # Filter to edges where suspicious_account is one endpoint
-    touching = agg[(agg["u"] == suspicious_account) | (agg["v"] == suspicious_account)].copy()
-    if touching.empty:
-        # If all rows were self-loops (shouldn't happen after filter), return empties
+    if not include_alter_alter_edges:
+        sub_edges = sub_edges[(sub_edges["u"] == suspicious_account) | (sub_edges["v"] == suspicious_account)]
+
+    # If nothing survived, return empties (but still write CSVs)
+    if sub_edges.empty:
+        nodes_df = pd.DataFrame({"Id": node_set})
         edges_df = pd.DataFrame(columns=["Source", "Target", "Type", "tx_count", "amount_sum"])
-    else:
-        # Map to Source/Target with the other endpoint as counterparty
-        touching["Source"] = suspicious_account
-        touching["Target"] = touching.apply(lambda r: r["v"] if r["u"] == suspicious_account else r["u"], axis=1)
-        edges_df = touching[["Source", "Target", "tx_count", "amount_sum"]].copy()
-        edges_df.insert(2, "Type", "Undirected")
+        out_path_nodes, out_path_edges = _write_gephi_csvs(nodes_df, edges_df, out_dir, nodes_fname, edges_fname)
+        # Clean temp
+        df.drop(columns=["_value"], inplace=True, errors="ignore")
+        return nodes_df, edges_df, {"nodes_csv": str(out_path_nodes), "edges_csv": str(out_path_edges)}
+
+    # Build Gephi-style outputs
+    nodes_df = pd.DataFrame({"Id": node_set}).reset_index(drop=True)
+    edges_df = sub_edges.rename(columns={"u": "Source", "v": "Target"})
+    edges_df.insert(2, "Type", "Undirected")
+    edges_df = edges_df[["Source", "Target", "Type", "tx_count", "amount_sum"]]
 
     # Write CSVs
     out_path_nodes, out_path_edges = _write_gephi_csvs(nodes_df, edges_df, out_dir, nodes_fname, edges_fname)
 
-    # Clean temporary column
-    if "_value" in ego_df.columns:
-        ego_df.drop(columns=["_value"], inplace=True, errors="ignore")
+    # Clean temp
+    df.drop(columns=["_value"], inplace=True, errors="ignore")
 
     return nodes_df, edges_df, {"nodes_csv": str(out_path_nodes), "edges_csv": str(out_path_edges)}
 
@@ -141,18 +169,3 @@ def _write_gephi_csvs(nodes_df: pd.DataFrame, edges_df: pd.DataFrame, out_dir: s
     nodes_df.to_csv(nodes_path, index=False)
     edges_df.to_csv(edges_path, index=False)
     return nodes_path, edges_path
-
-
-#--- Example usage ---
-outlier_account = "1004286F0"
-newDir = create_new_folder(folderPath, 'ego_nodes_edges_2025-09-20_2')
-
-df = load_rows_for_account(filePath, outlier_account, sep=",")
-
-nodes, edges, paths = build_ego_network_for_gephi(df, suspicious_account=outlier_account,
-                                                  out_dir=newDir,
-                                                  nodes_fname="nodes.csv",
-                                                  edges_fname="edges.csv")
-print(paths)
-
-
