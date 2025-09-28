@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import matplotlib.pyplot as plt   # <-- fixed import
 from paths_and_stuff import * 
@@ -23,7 +24,7 @@ def compute_account_stats(filtered_out: pd.DataFrame, filtered_in: pd.DataFrame)
     cp_out = filtered_out['Account.1'].astype(str) if 'Account.1' in filtered_out.columns else pd.Series([], dtype='string')
     cp_in  = filtered_in['Account'].astype(str)   if 'Account'   in filtered_in.columns   else pd.Series([], dtype='string')
     counterparties = pd.concat([cp_out, cp_in], ignore_index=True).dropna()
-    unique_counterparties = counterparties.nunique()
+    unique_counterparties = counterparties.nunique() if 'unique_counterparties' else counterparties.nunique()
 
     return {
         "total_tx": int(total_tx),
@@ -34,9 +35,10 @@ def compute_account_stats(filtered_out: pd.DataFrame, filtered_in: pd.DataFrame)
         "unique_counterparties": int(unique_counterparties),
     }
 
-newDir = create_new_folder(folderPath, 'accounts_nodes_edges_2025-07-27')
+# -------- Your existing setup --------
+newDir = create_new_folder(folderPath, '2025-07-28')
 
-outlier_account = "100428738"
+outlier_account = "1004286A8"
 outlier_accounts = [outlier_account]
 
 # Load data (your helper decides how sep is used)
@@ -62,7 +64,7 @@ summary = filtered_out.groupby('Account').agg({
     'Payment Format': lambda x: x.value_counts().to_dict()
 })
 
-# Plot daily totals for both outbound and inbound
+# -------- Plot + Excel export --------
 for acct in outlier_accounts:
     # Outbound amounts by day
     if not filtered_out.empty:
@@ -85,52 +87,82 @@ for acct in outlier_accounts:
     daily_out = daily_out.reindex(all_dates, fill_value=0)
     daily_in = daily_in.reindex(all_dates, fill_value=0)
 
-    # --- NEW: compute aggregated stats for this account ---
+    # --- Stats for this account ---
     acc_stats = compute_account_stats(filtered_out, filtered_in)
 
-    # Plot
-# format helper
-def _fmt(x):
-    return "n/a" if (x is None or pd.isna(x)) else f"{x:,.2f}"
+    # --- Build the two DataFrames to save ---
+    # 1) Stats sheet (one row)
+    stats_df = pd.DataFrame([{
+        "Account": acct,
+        "Total Tx": acc_stats["total_tx"],
+        "Inbound Tx": acc_stats["inbound_tx"],
+        "Outbound Tx": acc_stats["outbound_tx"],
+        "Unique Counterparties": acc_stats["unique_counterparties"],
+        "Mean Amount": acc_stats["mean_amount"],
+        "Max Single Tx": acc_stats["max_single_tx"]
+    }])
 
-# build the multi-line stats string
-stats_lines = [
-    f"Total tx: {acc_stats['total_tx']:,}",
-    f"Inbound: {acc_stats['inbound_tx']:,}   Outbound: {acc_stats['outbound_tx']:,}",
-    f"Counterparties: {acc_stats['unique_counterparties']:,}",
-    f"Mean amount: {_fmt(acc_stats['mean_amount'])}",
-    f"Max single tx: {_fmt(acc_stats['max_single_tx'])}",
-]
-stats_text = "\n".join(stats_lines)   # <-- create the variable you pass below
+    # 2) Daily series sheet (Date, Inbound, Outbound)
+    daily_df = pd.DataFrame({
+        "Date": pd.to_datetime(all_dates),       # ensure datetime for Excel formatting
+        "Inbound": [float(v) for v in daily_in.values] if len(daily_in) else [],
+        "Outbound": [float(v) for v in daily_out.values] if len(daily_out) else [],
+    })
 
+    # --- Write Excel file ---
+    out_xlsx = os.path.join(newDir, f"account_{acct}_summary.xlsx")
+    with pd.ExcelWriter(out_xlsx, engine="xlsxwriter", datetime_format="yyyy-mm-dd") as writer:
+        stats_df.to_excel(writer, sheet_name="Stats", index=False)
+        daily_df.to_excel(writer, sheet_name="DailySeries", index=False)
 
-# 1) Build a 2-column layout: left for text, right for the plot
-fig = plt.figure(figsize=(14, 7))
-gs = fig.add_gridspec(nrows=1, ncols=2, width_ratios=[1, 3], wspace=0.05)
+        # Optional: make columns a bit wider
+        wb = writer.book
+        ws_stats = writer.sheets["Stats"]
+        ws_daily = writer.sheets["DailySeries"]
+        ws_stats.set_column(0, stats_df.shape[1]-1, 20)
+        ws_daily.set_column(0, daily_df.shape[1]-1, 18)
 
-ax_text = fig.add_subplot(gs[0, 0])
-ax_plot = fig.add_subplot(gs[0, 1])
+    print(f"Saved Excel summary for {acct}: {out_xlsx}")
 
-# 2) Plot on ax_plot (change your plt.* to ax_plot.*)
-ax_plot.plot(all_dates, daily_out.values, marker='o', label='Outbound (Amount Paid)')
-ax_plot.plot(all_dates, daily_in.values, marker='o', linestyle='--', label='Inbound (Amount Received)')
-ax_plot.set_title(f"Payments for Account {acct}")
-ax_plot.set_xlabel('Date')
-ax_plot.set_ylabel('Total Amount')
-ax_plot.legend()
-for label in ax_plot.get_xticklabels():
-    label.set_rotation(45)
+    # --- Plot ---
+    # format helper
+    def _fmt(x):
+        return "n/a" if (x is None or pd.isna(x)) else f"{x:,.2f}"
 
-# 3) Put the stats in the left panel and hide its axes
-ax_text.axis('off')
-ax_text.text(
-    0.0, 1.0, stats_text,
-    transform=ax_text.transAxes,
-    ha="left", va="top", fontsize=10,
-    bbox=dict(boxstyle="round", facecolor="white", alpha=0.75, edgecolor="0.5", linewidth=1)
-)
+    # build the multi-line stats string
+    stats_lines = [
+        f"Total tx: {acc_stats['total_tx']:,}",
+        f"Inbound: {acc_stats['inbound_tx']:,}   Outbound: {acc_stats['outbound_tx']:,}",
+        f"Counterparties: {acc_stats['unique_counterparties']:,}",
+        f"Mean amount: {_fmt(acc_stats['mean_amount'])}",
+        f"Max single tx: {_fmt(acc_stats['max_single_tx'])}",
+    ]
+    stats_text = "\n".join(stats_lines)
 
-plt.show()
+    # 1) Build a 2-column layout: left for text, right for the plot
+    fig = plt.figure(figsize=(14, 7))
+    gs = fig.add_gridspec(nrows=1, ncols=2, width_ratios=[1, 3], wspace=0.05)
 
+    ax_text = fig.add_subplot(gs[0, 0])
+    ax_plot = fig.add_subplot(gs[0, 1])
 
+    # 2) Plot on ax_plot
+    ax_plot.plot(all_dates, daily_out.values, marker='o', label='Outbound (Amount Paid)')
+    ax_plot.plot(all_dates, daily_in.values, marker='o', linestyle='--', label='Inbound (Amount Received)')
+    ax_plot.set_title(f"Payments for Account {acct}")
+    ax_plot.set_xlabel('Date')
+    ax_plot.set_ylabel('Total Amount')
+    ax_plot.legend()
+    for label in ax_plot.get_xticklabels():
+        label.set_rotation(45)
 
+    # 3) Put the stats in the left panel and hide its axes
+    ax_text.axis('off')
+    ax_text.text(
+        0.0, 1.0, stats_text,
+        transform=ax_text.transAxes,
+        ha="left", va="top", fontsize=10,
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.75, edgecolor="0.5", linewidth=1)
+    )
+
+    plt.show()
