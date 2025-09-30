@@ -100,6 +100,7 @@ def load_rows_for_account(
     # Build filtered dataframe (even if empty)
     if filtered_chunks:
         filtered_df = pd.concat(filtered_chunks, ignore_index=True)
+        rows_filtered_out = filtered_df.shape[0]
     else:
         # Preserve header if file has one
         try:
@@ -111,9 +112,11 @@ def load_rows_for_account(
         except Exception:
             cols = []
         filtered_df = pd.DataFrame(columns=cols)
+        rows_filtered_out = filtered_df.shape[0]
 
     stats = {
         "total_rows": int(total_rows),
+        "rows_for_account": rows_filtered_out,
         "dataset_min_date": dataset_min_date,
         "dataset_max_date": dataset_max_date,
     }
