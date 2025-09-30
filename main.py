@@ -3,12 +3,17 @@ from helpers import *
 from simple_aml_functions import *
 import os
 import pandas as pd
+from anomaly_detection_get_tx_for_account import *
+from anomaly_detection_egonet import *
 
 #print(get_file_head_as_df(filePath))
 
-# newFolder = create_new_folder(folderPath, "20250803")
-#df = load_rows_for_account(filePath, "1004286A8",sep=",")
+newFolder = create_new_folder(folderPath, "2025-09-30")
+suspicious_account_in = "1004286A8"
 
+df, stats = load_rows_for_account(filePath, suspicious_account_in, sep=",") 
+build_ego_network_for_gephi(df, out_dir=newFolder, suspicious_account=suspicious_account_in)
+print("okidoki!")
 
 #print(df['Timestamp'].astype('datetime64[ns]').dt.date.unique())
 
@@ -31,12 +36,12 @@ import pandas as pd
 #df = read_csv_custom(filePath, nrows=50000)
 
 
-newFolder = create_new_folder(folderPath, "2025-09-28")
-df = read_csv_custom(filePath, nrows=1000000)
-outbound, inbound, min_d, max_d = top_accounts_by_transactions(df)
-print("Outbound top accounts:\n", outbound)
-print("Inbound top accounts:\n", inbound)
-print(f"Data covers from {min_d} to {max_d}")
+# newFolder = create_new_folder(folderPath, "2025-09-28")
+# df = read_csv_custom(filePath, nrows=1000000)
+# outbound, inbound, min_d, max_d = top_accounts_by_transactions(df)
+# print("Outbound top accounts:\n", outbound)
+# print("Inbound top accounts:\n", inbound)
+# print(f"Data covers from {min_d} to {max_d}")
 
 # Or write directly to disk
 #_ = univariate_eda(df, "Account", write_path= newFolder + "/eda_account.csv", top_k=15)
