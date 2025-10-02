@@ -6,14 +6,28 @@ import pandas as pd
 from anomaly_detection_get_tx_for_account import *
 from anomaly_detection_egonet import *
 
+
+####################GOOD TO HAVE READY to RUN###############
+
+#inspect_csv_file(filePath)
+
+#df = read_csv_custom(filePath, nrows=50000)
+#print(univariate_eda(df, column='Timestamp'))
+
+
+#newFolder = create_new_folder(folderPath, "2025-09-28")
+
+############################################################
+
 #print(get_file_head_as_df(filePath))
 
-newFolder = create_new_folder(folderPath, "2025-09-30")
-suspicious_account_in = "1004286A8"
+# newFolder = create_new_folder(folderPath, "2025-09-30")
+# suspicious_account_in = "1004288A0"
 
-df, stats = load_rows_for_account(filePath, suspicious_account_in, sep=",") 
-build_ego_network_for_gephi(df, out_dir=newFolder, suspicious_account=suspicious_account_in)
-print("okidoki!")
+# df, stats = load_rows_for_account(filePath, suspicious_account_in, sep=",") 
+# print(stats)
+#build_ego_network_for_gephi(df, out_dir=newFolder, suspicious_account=suspicious_account_in)
+
 
 #print(df['Timestamp'].astype('datetime64[ns]').dt.date.unique())
 
@@ -36,8 +50,8 @@ print("okidoki!")
 #df = read_csv_custom(filePath, nrows=50000)
 
 
-# newFolder = create_new_folder(folderPath, "2025-09-28")
-# df = read_csv_custom(filePath, nrows=1000000)
+#newFolder = create_new_folder(folderPath, "2025-09-28")
+# df = read_csv_custom(filePath, nrows=500000)
 # outbound, inbound, min_d, max_d = top_accounts_by_transactions(df)
 # print("Outbound top accounts:\n", outbound)
 # print("Inbound top accounts:\n", inbound)
