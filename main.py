@@ -11,11 +11,17 @@ from anomaly_detection_egonet import *
 
 #inspect_csv_file(filePath)
 
-#df = read_csv_custom(filePath, nrows=50000)
-#print(univariate_eda(df, column='Timestamp'))
+# df = read_csv_custom(filePath, nrows=50000)
+# print(univariate_eda(df, column='Ammount Paid'))
 
 
-#newFolder = create_new_folder(folderPath, "2025-09-28")
+# newFolder = create_new_folder(folderPath, "2025-10-04")s
+
+df = read_csv_custom(filePath, nrows=100000)
+outbound, inbound, min_d, max_d = top_accounts_by_transactions(df)
+print("Outbound top accounts:\n", outbound)
+print("Inbound top accounts:\n", inbound)
+print(f"Data covers from {min_d} to {max_d}")
 
 ############################################################
 
@@ -51,11 +57,7 @@ from anomaly_detection_egonet import *
 
 
 #newFolder = create_new_folder(folderPath, "2025-09-28")
-# df = read_csv_custom(filePath, nrows=500000)
-# outbound, inbound, min_d, max_d = top_accounts_by_transactions(df)
-# print("Outbound top accounts:\n", outbound)
-# print("Inbound top accounts:\n", inbound)
-# print(f"Data covers from {min_d} to {max_d}")
+
 
 # Or write directly to disk
 #_ = univariate_eda(df, "Account", write_path= newFolder + "/eda_account.csv", top_k=15)

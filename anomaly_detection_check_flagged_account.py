@@ -1,30 +1,47 @@
 import os
 import pandas as pd
-import matplotlib.pyplot as plt   # <-- fixed import
-from paths_and_stuff import * 
-from helpers import * 
+import matplotlib.pyplot as plt  # <-- fixed import
+
+from paths_and_stuff import *
+from helpers import *
 from anomaly_detection_get_tx_for_account import *
 
 
 def compute_account_stats(filtered_out: pd.DataFrame, filtered_in: pd.DataFrame) -> dict:
-    # Counts
+    """
+    Compute summary stats for a single account given outbound (sent) and inbound (received) subsets.
+    """
+    # ---------------- Counts ----------------
     outbound_tx = len(filtered_out)
     inbound_tx = len(filtered_in)
     total_tx = outbound_tx + inbound_tx
 
-    # Amounts: outbound uses Amount Paid; inbound uses Amount Received
+    # ---------------- Amounts ----------------
+    # outbound uses Amount Paid; inbound uses Amount Received
     amt_out = filtered_out['Amount Paid'] if 'Amount Paid' in filtered_out.columns else pd.Series(dtype='float64')
-    amt_in  = filtered_in['Amount Received'] if 'Amount Received' in filtered_in.columns else pd.Series(dtype='float64')
+    amt_in = filtered_in['Amount Received'] if 'Amount Received' in filtered_in.columns else pd.Series(dtype='float64')
     amounts = pd.concat([amt_out, amt_in], ignore_index=True)
-
     mean_amount = amounts.mean(skipna=True) if not amounts.empty else float('nan')
-    max_amount  = amounts.max(skipna=True) if not amounts.empty else float('nan')
+    max_amount = amounts.max(skipna=True) if not amounts.empty else float('nan')
 
-    # Unique counterparties: out -> Account.1, in -> Account
-    cp_out = filtered_out['Account.1'].astype(str) if 'Account.1' in filtered_out.columns else pd.Series([], dtype='string')
-    cp_in  = filtered_in['Account'].astype(str)   if 'Account'   in filtered_in.columns   else pd.Series([], dtype='string')
+    # ---------------- Counterparties ----------------
+    # Outbound counterparties are the receivers (Account.1) in outbound rows
+    cp_out = (
+        filtered_out['Account.1'].astype(str)
+        if 'Account.1' in filtered_out.columns else pd.Series([], dtype='string')
+    )
+    # Inbound counterparties are the senders (Account) in inbound rows
+    cp_in = (
+        filtered_in['Account'].astype(str)
+        if 'Account' in filtered_in.columns else pd.Series([], dtype='string')
+    )
+
+    unique_outbound_cps = int(cp_out.dropna().nunique()) if not cp_out.empty else 0
+    unique_inbound_cps = int(cp_in.dropna().nunique()) if not cp_in.empty else 0
+
+    # Total unique counterparties (union of both directions)
     counterparties = pd.concat([cp_out, cp_in], ignore_index=True).dropna()
-    unique_counterparties = counterparties.nunique() if 'unique_counterparties' else counterparties.nunique()
+    unique_counterparties_total = int(counterparties.nunique()) if not counterparties.empty else 0
 
     return {
         "total_tx": int(total_tx),
@@ -32,17 +49,19 @@ def compute_account_stats(filtered_out: pd.DataFrame, filtered_in: pd.DataFrame)
         "inbound_tx": int(inbound_tx),
         "mean_amount": None if pd.isna(mean_amount) else float(mean_amount),
         "max_single_tx": None if pd.isna(max_amount) else float(max_amount),
-        "unique_counterparties": int(unique_counterparties),
+        "unique_counterparties_total": unique_counterparties_total,
+        "unique_outbound_counterparties": unique_outbound_cps,
+        "unique_inbound_counterparties": unique_inbound_cps,
     }
 
-# -------- Your existing setup --------
-newDir = create_new_folder(folderPath, '2025-07-28')
 
-outlier_account = "1004286A8"
+# -------- Your existing setup --------
+newDir = create_new_folder(folderPath, '2025-10-04')
+outlier_account = "100428660"
 outlier_accounts = [outlier_account]
 
 # Load data (your helper decides how sep is used)
-df, stats = load_rows_for_account(filePath, outlier_account, sep=",") 
+df, stats = load_rows_for_account(filePath, outlier_account, sep=",")
 
 # Parse / cast
 df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
@@ -97,30 +116,43 @@ for acct in outlier_accounts:
         "Total Tx": acc_stats["total_tx"],
         "Inbound Tx": acc_stats["inbound_tx"],
         "Outbound Tx": acc_stats["outbound_tx"],
-        "Unique Counterparties": acc_stats["unique_counterparties"],
+        # Split counterparties + keep total
+        "Unique Counterparties (Total)": acc_stats["unique_counterparties_total"],
+        "Unique Inbound Counterparties": acc_stats["unique_inbound_counterparties"],
+        "Unique Outbound Counterparties": acc_stats["unique_outbound_counterparties"],
         "Mean Amount": acc_stats["mean_amount"],
         "Max Single Tx": acc_stats["max_single_tx"]
     }])
 
     # 2) Daily series sheet (Date, Inbound, Outbound)
     daily_df = pd.DataFrame({
-        "Date": pd.to_datetime(all_dates),       # ensure datetime for Excel formatting
+        "Date": pd.to_datetime(all_dates),  # ensure datetime for Excel formatting
         "Inbound": [float(v) for v in daily_in.values] if len(daily_in) else [],
         "Outbound": [float(v) for v in daily_out.values] if len(daily_out) else [],
     })
 
     # --- Write Excel file ---
     out_xlsx = os.path.join(newDir, f"account_{acct}_summary.xlsx")
-    with pd.ExcelWriter(out_xlsx, engine="xlsxwriter", datetime_format="yyyy-mm-dd") as writer:
+
+    # Try xlsxwriter; if not installed, fallback to openpyxl (keeps things robust)
+    try:
+        engine_name = "xlsxwriter"
+        # this import will raise if missing
+        import xlsxwriter  # noqa: F401
+    except ImportError:
+        engine_name = "openpyxl"
+
+    with pd.ExcelWriter(out_xlsx, engine=engine_name, datetime_format="yyyy-mm-dd") as writer:
         stats_df.to_excel(writer, sheet_name="Stats", index=False)
         daily_df.to_excel(writer, sheet_name="DailySeries", index=False)
 
-        # Optional: make columns a bit wider
-        wb = writer.book
-        ws_stats = writer.sheets["Stats"]
-        ws_daily = writer.sheets["DailySeries"]
-        ws_stats.set_column(0, stats_df.shape[1]-1, 20)
-        ws_daily.set_column(0, daily_df.shape[1]-1, 18)
+        # Optional: make columns a bit wider (if engine supports it)
+        if engine_name == "xlsxwriter":
+            wb = writer.book
+            ws_stats = writer.sheets["Stats"]
+            ws_daily = writer.sheets["DailySeries"]
+            ws_stats.set_column(0, stats_df.shape[1] - 1, 24)
+            ws_daily.set_column(0, daily_df.shape[1] - 1, 18)
 
     print(f"Saved Excel summary for {acct}: {out_xlsx}")
 
@@ -129,11 +161,13 @@ for acct in outlier_accounts:
     def _fmt(x):
         return "n/a" if (x is None or pd.isna(x)) else f"{x:,.2f}"
 
-    # build the multi-line stats string
+    # build the multi-line stats string (now with split counterparties)
     stats_lines = [
         f"Total tx: {acc_stats['total_tx']:,}",
-        f"Inbound: {acc_stats['inbound_tx']:,}   Outbound: {acc_stats['outbound_tx']:,}",
-        f"Counterparties: {acc_stats['unique_counterparties']:,}",
+        f"Inbound: {acc_stats['inbound_tx']:,}    Outbound: {acc_stats['outbound_tx']:,}",
+        f"Counterparties (Total): {acc_stats['unique_counterparties_total']:,}",
+        f"  ├─ Inbound CPs:  {acc_stats['unique_inbound_counterparties']:,}",
+        f"  └─ Outbound CPs: {acc_stats['unique_outbound_counterparties']:,}",
         f"Mean amount: {_fmt(acc_stats['mean_amount'])}",
         f"Max single tx: {_fmt(acc_stats['max_single_tx'])}",
     ]
@@ -142,7 +176,6 @@ for acct in outlier_accounts:
     # 1) Build a 2-column layout: left for text, right for the plot
     fig = plt.figure(figsize=(14, 7))
     gs = fig.add_gridspec(nrows=1, ncols=2, width_ratios=[1, 3], wspace=0.05)
-
     ax_text = fig.add_subplot(gs[0, 0])
     ax_plot = fig.add_subplot(gs[0, 1])
 
@@ -161,7 +194,8 @@ for acct in outlier_accounts:
     ax_text.text(
         0.0, 1.0, stats_text,
         transform=ax_text.transAxes,
-        ha="left", va="top", fontsize=10,
+        ha="left", va="top",
+        fontsize=10,
         bbox=dict(boxstyle="round", facecolor="white", alpha=0.75, edgecolor="0.5", linewidth=1)
     )
 
