@@ -11,17 +11,16 @@ from anomaly_detection_egonet import *
 
 #inspect_csv_file(filePath)
 
-# df = read_csv_custom(filePath, nrows=50000)
-# print(univariate_eda(df, column='Ammount Paid'))
+df = read_csv_custom(filePath, nrows=500000)
+print(univariate_eda(df, column='From Bank'))
 
+# newFolder = create_new_folder(folderPath, "2025-10-04")
 
-# newFolder = create_new_folder(folderPath, "2025-10-04")s
-
-df = read_csv_custom(filePath, nrows=100000)
-outbound, inbound, min_d, max_d = top_accounts_by_transactions(df)
-print("Outbound top accounts:\n", outbound)
-print("Inbound top accounts:\n", inbound)
-print(f"Data covers from {min_d} to {max_d}")
+# df = read_csv_custom(filePath, nrows=100000)
+# outbound, inbound, min_d, max_d = top_accounts_by_transactions(df)
+# print("Outbound top accounts:\n", outbound)
+# print("Inbound top accounts:\n", inbound)
+# print(f"Data covers from {min_d} to {max_d}")
 
 ############################################################
 

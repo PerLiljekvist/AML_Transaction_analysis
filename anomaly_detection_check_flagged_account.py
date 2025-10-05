@@ -56,8 +56,8 @@ def compute_account_stats(filtered_out: pd.DataFrame, filtered_in: pd.DataFrame)
 
 
 # -------- Your existing setup --------
-newDir = create_new_folder(folderPath, '2025-10-04')
-outlier_account = "100428660"
+newDir = create_new_folder(folderPath, '2025-10-05')
+outlier_account = "80026D340"
 outlier_accounts = [outlier_account]
 
 # Load data (your helper decides how sep is used)
