@@ -1,108 +1,107 @@
+# ===========================
+# AML Tx Feature Engineering - Lean Ad-hoc Version
+# ===========================
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime
-from paths_and_stuff import * 
 from helpers import *
+from paths_and_stuff import *
 
-# ============================================================
-# Inline feature engineering functions
-# ============================================================
+# ---------------------------
+# Config (change these two)
+# ---------------------------
+#filePath   = filePath  # <- set me
+csv_sep    = ";"                               # ";" for your sample, change if needed
+output_dir = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))    
 
-def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Create transaction-level (row-level) derived features.
-    Safe for partially-missing columns.
-    """
+# ---------------------------
+# Utilities
+# ---------------------------
+def _to_num(s): 
+    return pd.to_numeric(s, errors="coerce")
+
+def _ensure_columns(df: pd.DataFrame, cols):
     d = df.copy()
+    for c in cols:
+        if c not in d.columns:
+            d[c] = np.nan
+    return d
 
-    # Ensure key columns exist (create safe defaults if missing)
-    for col in ["From Bank", "To Bank", "Amount Paid", "Amount Received", "Payment Format"]:
-        if col not in d.columns:
-            d[col] = np.nan
+def _reorder_with_original_first(original_df: pd.DataFrame, enriched_df: pd.DataFrame) -> pd.DataFrame:
+    orig_cols = [c for c in original_df.columns if c in enriched_df.columns]
+    new_cols  = [c for c in enriched_df.columns if c not in orig_cols]
+    return enriched_df[orig_cols + new_cols]
 
-    # Same-bank flag
-    d["Same_Bank"] = (d["From Bank"].astype(str) == d["To Bank"].astype(str)).astype("Int8")
+# ---------------------------
+# 1) Row-level (transaction) features
+# ---------------------------
+def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
+    d = _ensure_columns(df, ["From Bank", "To Bank", "Amount Paid", "Amount Received", "Payment Format"])
 
-    # Amount differences / ratios
-    d["Amount_Diff"] = pd.to_numeric(d["Amount Paid"], errors="coerce") - pd.to_numeric(d["Amount Received"], errors="coerce")
-    amt_rec = pd.to_numeric(d["Amount Received"], errors="coerce")
-    amt_paid = pd.to_numeric(d["Amount Paid"], errors="coerce")
-    d["Amount_Ratio"] = np.where(amt_rec > 0, amt_paid / amt_rec, np.nan)
+    # Safe casts
+    d["From Bank"]      = d["From Bank"].astype(str)
+    d["To Bank"]        = d["To Bank"].astype(str)
+    amt_paid            = _to_num(d["Amount Paid"])
+    amt_rec             = _to_num(d["Amount Received"])
 
-    # Simple format tag (example)
+    # Features
+    d["Same_Bank"]      = (d["From Bank"] == d["To Bank"]).astype("Int8")
+    d["Amount_Diff"]    = amt_paid - amt_rec
+    d["Amount_Ratio"]   = np.where(amt_rec > 0, amt_paid / amt_rec, np.nan)
     d["Is_Reinvestment"] = d["Payment Format"].astype(str).str.contains("reinvest", case=False, na=False).astype("Int8")
 
     return d
 
-
+# ---------------------------
+# 2) Account-level aggregates (sender+receiver)
+# ---------------------------
 def compute_account_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Aggregate features per account (both outbound and inbound).
-    Key = 'Account' (sender). Inbound is aligned to that key.
-    """
-    d = df.copy()
+    d = _ensure_columns(df, ["Account", "Account.1", "Amount Paid", "Amount Received"])
+    d["Account"]   = d["Account"].astype(str)
+    d["Account.1"] = d["Account.1"].astype(str)
 
-    # Ensure columns exist
-    for col in ["Account", "Account.1", "Amount Paid", "Amount Received"]:
-        if col not in d.columns:
-            d[col] = np.nan
-
-    # Outbound (sender side) aggregates: group by Account
     out = d.groupby("Account", dropna=False).agg(
         total_out_tx=("Account.1", "count"),
-        total_out_amt=("Amount Paid", lambda x: pd.to_numeric(x, errors="coerce").sum()),
-        avg_out_amt=("Amount Paid", lambda x: pd.to_numeric(x, errors="coerce").mean()),
-        max_out_amt=("Amount Paid", lambda x: pd.to_numeric(x, errors="coerce").max()),
-        min_out_amt=("Amount Paid", lambda x: pd.to_numeric(x, errors="coerce").min()),
+        total_out_amt=("Amount Paid", lambda x: _to_num(x).sum()),
+        avg_out_amt=("Amount Paid", lambda x: _to_num(x).mean()),
+        max_out_amt=("Amount Paid", lambda x: _to_num(x).max()),
+        min_out_amt=("Amount Paid", lambda x: _to_num(x).min()),
     )
 
-    # Inbound (receiver side) aggregates: group by Account.1, then rename key -> Account
     inb = d.groupby("Account.1", dropna=False).agg(
         total_in_tx=("Account", "count"),
-        total_in_amt=("Amount Received", lambda x: pd.to_numeric(x, errors="coerce").sum()),
-        avg_in_amt=("Amount Received", lambda x: pd.to_numeric(x, errors="coerce").mean()),
-        max_in_amt=("Amount Received", lambda x: pd.to_numeric(x, errors="coerce").max()),
-        min_in_amt=("Amount Received", lambda x: pd.to_numeric(x, errors="coerce").min()),
+        total_in_amt=("Amount Received", lambda x: _to_num(x).sum()),
+        avg_in_amt=("Amount Received", lambda x: _to_num(x).mean()),
+        max_in_amt=("Amount Received", lambda x: _to_num(x).max()),
+        min_in_amt=("Amount Received", lambda x: _to_num(x).min()),
     )
     inb.index.name = "Account"
+
     acc = out.join(inb, how="outer").reset_index()
-
-    # Net flow (out - in)
     acc["net_flow_amt"] = (acc["total_out_amt"].fillna(0) - acc["total_in_amt"].fillna(0))
-
     return acc
 
-
+# ---------------------------
+# 3) Uniques + HHI (per account)
+#     HHI = sum_i (share_i^2) over counterparties
+# ---------------------------
 def compute_uniques_and_hhi(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compute unique counterparties + HHI on both sides, aligned to key 'Account'.
-    - unique_receivers: # distinct Account.1 per Account
-    - unique_senders:   # distinct Account per Account.1 (aligned back to Account)
-    - HHI_out: Herfindahl index of a sender's distribution across receivers
-    - HHI_in:  Herfindahl index of a receiver's distribution across senders
-    """
-    d = df.copy()
-    for col in ["Account", "Account.1"]:
-        if col not in d.columns:
-            d[col] = np.nan
+    d = _ensure_columns(df, ["Account", "Account.1"])
+    d["Account"]   = d["Account"].astype(str)
+    d["Account.1"] = d["Account.1"].astype(str)
 
-    # Unique counts
     unique_receivers = d.groupby("Account", dropna=False)["Account.1"].nunique().rename("unique_receivers")
-    unique_senders_raw = d.groupby("Account.1", dropna=False)["Account"].nunique().rename("unique_senders")
-    unique_senders = unique_senders_raw.reset_index().rename(columns={"Account.1": "Account"}).set_index("Account")["unique_senders"]
+    unique_senders_r = d.groupby("Account.1", dropna=False)["Account"].nunique().rename("unique_senders")
+    unique_senders   = unique_senders_r.reset_index().rename(columns={"Account.1": "Account"}).set_index("Account")["unique_senders"]
 
-    # Pair counts for HHI
     pair_counts = d.groupby(["Account", "Account.1"], dropna=False).size().reset_index(name="tx_count")
 
-    # HHI outbound (per Account over receivers)
     hhi_out = (
         pair_counts.groupby("Account")["tx_count"]
         .apply(lambda x: ((x / x.sum()) ** 2).sum() if x.sum() > 0 else np.nan)
         .rename("HHI_out")
     )
-
-    # HHI inbound (per Account.1 over senders) -> realign to key 'Account'
     hhi_in_raw = (
         pair_counts.groupby("Account.1")["tx_count"]
         .apply(lambda x: ((x / x.sum()) ** 2).sum() if x.sum() > 0 else np.nan)
@@ -113,112 +112,82 @@ def compute_uniques_and_hhi(df: pd.DataFrame) -> pd.DataFrame:
     out = pd.concat([unique_receivers, unique_senders, hhi_out, hhi_in], axis=1).reset_index()
     return out
 
-
+# ---------------------------
+# 4) Attach sender/receiver account features to each transaction
+# ---------------------------
 def attach_sender_receiver_features(tx: pd.DataFrame,
                                    acc: pd.DataFrame,
                                    sender_suffix="_S",
                                    receiver_suffix="_R") -> pd.DataFrame:
-    """
-    Attach sender (by Account) and receiver (by Account.1) aggregates to each transaction.
-    """
     t = tx.copy()
     a = acc.copy()
 
-    # Prepare suffixed copies
-    acc_S = a.add_suffix(sender_suffix)  # keys under Account_S
-    acc_R = a.add_suffix(receiver_suffix)  # keys under Account_R
+    acc_S = a.copy()
+    acc_S.columns = [f"{c}{sender_suffix}" for c in acc_S.columns]
 
-    # Join sender features (Account -> Account_S)
-    if "Account" in t.columns and f"Account{sender_suffix}" in acc_S.columns:
-        t = t.merge(acc_S, how="left", left_on="Account", right_on=f"Account{sender_suffix}")
-    else:
-        # If key column missing in acc_S, rebuild it
-        acc_S = a.copy()
-        acc_S.columns = [f"{c}{sender_suffix}" for c in acc_S.columns]
-        t = t.merge(acc_S, how="left", left_on="Account", right_on=f"Account{sender_suffix}")
+    acc_R = a.copy()
+    acc_R.columns = [f"{c}{receiver_suffix}" for c in acc_R.columns]
 
-    # Join receiver features (Account.1 -> Account_R)
-    if "Account.1" in t.columns and f"Account{receiver_suffix}" in acc_R.columns:
-        t = t.merge(acc_R, how="left", left_on="Account.1", right_on=f"Account{receiver_suffix}")
-    else:
-        acc_R = a.copy()
-        acc_R.columns = [f"{c}{receiver_suffix}" for c in acc_R.columns]
-        t = t.merge(acc_R, how="left", left_on="Account.1", right_on=f"Account{receiver_suffix}")
-
+    t = t.merge(acc_S, how="left", left_on="Account",   right_on=f"Account{sender_suffix}")
+    t = t.merge(acc_R, how="left", left_on="Account.1", right_on=f"Account{receiver_suffix}")
     return t
 
+# ===========================
+# MAIN
+# ===========================
+# Load (semicolon default; change `csv_sep` above if needed)
 
-# ============================================================
-# 1) Load data (semicolon-separated)
-# ============================================================
-df = read_csv_custom(filePath, nrows=5000)
+df = read_csv_custom(filePath, nrows=1000)
 
+# Safe numeric casts for amounts (keep original text columns too if you want)
+for amount_col in ["Amount Paid", "Amount Received"]:
+    if amount_col in df.columns:
+        df[amount_col] = _to_num(df[amount_col])
 
-# Cast IDs to string to avoid dtype surprises
+# Ensure ID-like columns are strings
 for col in ["Account", "Account.1", "From Bank", "To Bank", "Payment Format"]:
     if col in df.columns:
         df[col] = df[col].astype(str)
 
-# ============================================================
-# 2) Row-level features
-# ============================================================
+# 1) Tx-level features
 tx = engineer_tx_features(df)
 
-# ============================================================
-# 3) Per-account aggregates
-# ============================================================
+# 2) Account aggregates
 acc = compute_account_features(df)
 
-# ============================================================
-# 4) Uniques + HHI, then merge into acc
-# ============================================================
+# 3) Uniques + HHI, merged into acc
 uniq_hhi = compute_uniques_and_hhi(df)
 acc = acc.merge(uniq_hhi, on="Account", how="left")
 
-# ============================================================
-# 5) Transaction table augmented with sender/receiver aggregates
-# ============================================================
-tx_model = attach_sender_receiver_features(
-    tx,
-    acc,
-    sender_suffix="_S",
-    receiver_suffix="_R"
-)
+# 4) Tx table with sender/receiver aggregates
+tx_model = attach_sender_receiver_features(tx, acc, sender_suffix="_S", receiver_suffix="_R")
 
-# Normalize timestamp format if present
+# Normalize timestamp if present (string format for easy CSV use)
 if "Timestamp" in tx_model.columns:
     tx_model["Timestamp"] = pd.to_datetime(tx_model["Timestamp"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
 
-# ============================================================
-# 6) Save all outputs (date-stamped)
-# ============================================================
+# 5) Save outputs
 today = datetime.now().strftime("%Y-%m-%d")
-OUTPUT_DIR = Path(create_new_folder(folderPath, today))
-#OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-def _reorder_with_original_first(original_df: pd.DataFrame, enriched_df: pd.DataFrame) -> pd.DataFrame:
-    """Put original columns first, then the new feature columns."""
-    orig_cols = [c for c in original_df.columns if c in enriched_df.columns]
-    new_cols = [c for c in enriched_df.columns if c not in orig_cols]
-    return enriched_df[orig_cols + new_cols]
+# out_dir = Path(output_dir) / today
+# out_dir.mkdir(parents=True, exist_ok=True)
+out_dir = Path(output_dir)
 
 # a) Row-level features only
 tx_out = _reorder_with_original_first(df, tx) if set(df.columns).issubset(tx.columns) else tx.copy()
-tx_out.to_csv(OUTPUT_DIR / f"tx_features_only_{today}.csv", sep=";", index=False)
+tx_out.to_csv(out_dir / f"tx_features_only_{today}.csv", sep=csv_sep, index=False)
 
-# b) Per-account aggregates
-acc.to_csv(OUTPUT_DIR / f"account_features_{today}.csv", sep=";", index=False)
+# b) Per-account aggregates (with uniques+HHI)
+acc.to_csv(out_dir / f"account_features_{today}.csv", sep=csv_sep, index=False)
 
-# c) Uniques + HHI standalone
-uniq_hhi.to_csv(OUTPUT_DIR / f"account_uniques_hhi_{today}.csv", sep=";", index=False)
+# c) Uniques + HHI standalone (optional but handy)
+uniq_hhi.to_csv(out_dir / f"account_uniques_hhi_{today}.csv", sep=csv_sep, index=False)
 
-# d) Full modeling table (tx + sender/receiver features)
+# d) Full modeling table
 tx_model_out = _reorder_with_original_first(df, tx_model) if set(df.columns).issubset(tx_model.columns) else tx_model.copy()
-tx_model_out.to_csv(OUTPUT_DIR / f"tx_model_with_sender_receiver_features_{today}.csv", sep=";", index=False)
+tx_model_out.to_csv(out_dir / f"tx_model_with_sender_receiver_features_{today}.csv", sep=csv_sep, index=False)
 
 print("\n✅ Feature export completed. Files saved to:")
-print(f"- {OUTPUT_DIR / f'tx_features_only_{today}.csv'}")
-print(f"- {OUTPUT_DIR / f'account_features_{today}.csv'}")
-print(f"- {OUTPUT_DIR / f'account_uniques_hhi_{today}.csv'}")
-print(f"- {OUTPUT_DIR / f'tx_model_with_sender_receiver_features_{today}.csv'}")
-
+print(f"- {out_dir / f'tx_features_only_{today}.csv'}")
+print(f"- {out_dir / f'account_features_{today}.csv'}")
+print(f"- {out_dir / f'account_uniques_hhi_{today}.csv'}")
+print(f"- {out_dir / f'tx_model_with_sender_receiver_features_{today}.csv'}")
