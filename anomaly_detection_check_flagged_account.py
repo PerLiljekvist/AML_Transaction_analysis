@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import matplotlib.pyplot as plt  # <-- fixed import
+from datetime import datetime
 
 from paths_and_stuff import *
 from helpers import *
@@ -56,7 +57,7 @@ def compute_account_stats(filtered_out: pd.DataFrame, filtered_in: pd.DataFrame)
 
 
 # -------- Your existing setup --------
-newDir = create_new_folder(folderPath, '2025-10-05')
+newDir = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))  
 outlier_account = "80026D340"
 outlier_accounts = [outlier_account]
 
