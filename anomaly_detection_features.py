@@ -50,6 +50,18 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
     d["Amount_Diff"]    = amt_paid - amt_rec
     d["Amount_Ratio"]   = np.where(amt_rec > 0, amt_paid / amt_rec, np.nan)
     d["Is_Reinvestment"] = d["Payment Format"].astype(str).str.contains("reinvest", case=False, na=False).astype("Int8")
+     
+    # Add one-hot encoded feature for payment format
+    cats = (
+        d["Payment Format"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .replace({"nan": "unknown"})
+    )
+
+    pf_dummies = pd.get_dummies(cats, prefix="PF", dtype="uint8")
+    d = pd.concat([d, pf_dummies], axis=1)
 
     return d
 
@@ -139,7 +151,7 @@ def attach_sender_receiver_features(tx: pd.DataFrame,
 
 df = read_csv_custom(filePath, nrows=1000)
 
-# Safe numeric casts for amounts (keep original text columns too if you want)
+# Safe numeric casts for amounts (keep original text columns too if you want)s
 for amount_col in ["Amount Paid", "Amount Received"]:
     if amount_col in df.columns:
         df[amount_col] = _to_num(df[amount_col])
