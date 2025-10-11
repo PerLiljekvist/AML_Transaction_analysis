@@ -64,6 +64,18 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
     d = pd.concat([d, pf_dummies], axis=1)
     d = d.drop(columns=["Payment Format"])
 
+    cats = (
+        d["Payment Currency"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .replace({"nan": "unknown"})
+    )
+
+    pf_dummies = pd.get_dummies(cats, prefix="PC", dtype="uint8")
+    d = pd.concat([d, pf_dummies], axis=1)
+    d = d.drop(columns=["Payment Currency"])
+
     return d
 
 # ---------------------------
