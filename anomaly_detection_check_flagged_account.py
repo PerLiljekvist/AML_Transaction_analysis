@@ -57,8 +57,8 @@ def compute_account_stats(filtered_out: pd.DataFrame, filtered_in: pd.DataFrame)
 
 
 # -------- Your existing setup --------
-newDir = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))  
-outlier_account = "80026D340"
+newDir = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
+outlier_account = "1004288A0"
 outlier_accounts = [outlier_account]
 
 # Load data (your helper decides how sep is used)
@@ -132,13 +132,40 @@ for acct in outlier_accounts:
         "Outbound": [float(v) for v in daily_out.values] if len(daily_out) else [],
     })
 
-    # --- Write Excel file ---
+    # -------------------------------------------------------
+    # NEW: Distribution tables (Payment Format & Currency)
+    # -------------------------------------------------------
+    # Combine inbound + outbound rows for THIS account
+    acct_df = pd.concat([filtered_out, filtered_in], ignore_index=True)
+
+    def make_distribution_df(series: pd.Series, name: str) -> pd.DataFrame:
+        series = series.dropna().astype(str)
+        if series.empty:
+            return pd.DataFrame(columns=[name, "Count", "Percent"])
+        counts = series.value_counts().sort_values(ascending=False)
+        total = int(counts.sum())
+        df_dist = counts.reset_index()
+        df_dist.columns = [name, "Count"]
+        df_dist["Percent"] = (df_dist["Count"] / total * 100).round(2)
+        return df_dist
+
+    fmt_df = make_distribution_df(acct_df.get("Payment Format", pd.Series(dtype=str)), "Payment Format")
+
+    # Prefer 'Payment Currency'; fallback to 'Receiving Currency'
+    if "Payment Currency" in acct_df.columns and acct_df["Payment Currency"].notna().any():
+        curr_series = acct_df["Payment Currency"]
+    elif "Receiving Currency" in acct_df.columns:
+        curr_series = acct_df["Receiving Currency"]
+    else:
+        curr_series = pd.Series(dtype=str)
+    curr_df = make_distribution_df(curr_series, "Currency")
+
+    # --- Write Excel file (now with 2 extra sheets) ---
     out_xlsx = os.path.join(newDir, f"account_{acct}_summary.xlsx")
 
     # Try xlsxwriter; if not installed, fallback to openpyxl (keeps things robust)
     try:
         engine_name = "xlsxwriter"
-        # this import will raise if missing
         import xlsxwriter  # noqa: F401
     except ImportError:
         engine_name = "openpyxl"
@@ -146,14 +173,17 @@ for acct in outlier_accounts:
     with pd.ExcelWriter(out_xlsx, engine=engine_name, datetime_format="yyyy-mm-dd") as writer:
         stats_df.to_excel(writer, sheet_name="Stats", index=False)
         daily_df.to_excel(writer, sheet_name="DailySeries", index=False)
+        fmt_df.to_excel(writer, sheet_name="PaymentFormatDist", index=False)
+        curr_df.to_excel(writer, sheet_name="PaymentCurrencyDist", index=False)
 
-        # Optional: make columns a bit wider (if engine supports it)
+        # Optional: widen columns (if engine supports it)
         if engine_name == "xlsxwriter":
-            wb = writer.book
             ws_stats = writer.sheets["Stats"]
             ws_daily = writer.sheets["DailySeries"]
-            ws_stats.set_column(0, stats_df.shape[1] - 1, 24)
-            ws_daily.set_column(0, daily_df.shape[1] - 1, 18)
+            ws_fmt = writer.sheets["PaymentFormatDist"]
+            ws_curr = writer.sheets["PaymentCurrencyDist"]
+            for ws in [ws_stats, ws_daily, ws_fmt, ws_curr]:
+                ws.set_column(0, 2, 24)
 
     print(f"Saved Excel summary for {acct}: {out_xlsx}")
 
@@ -201,3 +231,26 @@ for acct in outlier_accounts:
     )
 
     plt.show()
+
+    # -------------------------------------------------------
+    # Bar charts for Payment Format & Payment Currency
+    # -------------------------------------------------------
+    def _plot_bar_distribution(df_dist: pd.DataFrame, cat_col: str, title: str):
+        """Plot a simple bar chart from a distribution dataframe with Count/Percent columns."""
+        if df_dist.empty:
+            print(f"No data available for {title}")
+            return
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.bar(df_dist[cat_col], df_dist["Count"])
+        ax.set_title(title)
+        ax.set_xlabel(cat_col)
+        ax.set_ylabel("Count")
+        # Annotate bars with count and percent
+        for i, (cnt, pct) in enumerate(zip(df_dist["Count"], df_dist["Percent"])):
+            ax.text(i, cnt, f"{int(cnt)} ({pct:.1f}%)", ha="center", va="bottom")
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+        plt.show()
+
+    _plot_bar_distribution(fmt_df, "Payment Format", f"Distribution of Payment Format for Account {acct}")
+    _plot_bar_distribution(curr_df, "Currency", f"Distribution of Payment Currency for Account {acct}")

@@ -4,7 +4,7 @@ from pathlib import Path
 from paths_and_stuff import * 
 from helpers import * 
 from anomaly_detection_get_tx_for_account import *
-
+from datetime import datetime
 
 def build_ego_network_for_gephi(
     df: pd.DataFrame,
@@ -159,7 +159,6 @@ def build_ego_network_for_gephi(
 
     return nodes_df, edges_df, {"nodes_csv": str(out_path_nodes), "edges_csv": str(out_path_edges)}
 
-
 def _write_gephi_csvs(nodes_df: pd.DataFrame, edges_df: pd.DataFrame, out_dir: str, nodes_fname: str, edges_fname: str):
     """Helper to write nodes/edges CSVs and return their paths."""
     out_dir = Path(out_dir)
@@ -169,3 +168,10 @@ def _write_gephi_csvs(nodes_df: pd.DataFrame, edges_df: pd.DataFrame, out_dir: s
     nodes_df.to_csv(nodes_path, index=False)
     edges_df.to_csv(edges_path, index=False)
     return nodes_path, edges_path
+
+newDir = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))  
+suspicious_account = "1004288A0"
+df, stats = load_rows_for_account(filePath, suspicious_account, sep=",")
+
+build_ego_network_for_gephi(df, suspicious_account, out_dir=newDir)
+print("ok!")
