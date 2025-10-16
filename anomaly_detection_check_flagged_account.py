@@ -187,7 +187,9 @@ for acct in outlier_accounts:
 
     print(f"Saved Excel summary for {acct}: {out_xlsx}")
 
-    # --- Plot ---
+    # -----------------------------
+    # ONE-FIGURE LAYOUT (all plots)
+    # -----------------------------
     # format helper
     def _fmt(x):
         return "n/a" if (x is None or pd.isna(x)) else f"{x:,.2f}"
@@ -204,23 +206,39 @@ for acct in outlier_accounts:
     ]
     stats_text = "\n".join(stats_lines)
 
-    # 1) Build a 2-column layout: left for text, right for the plot
-    fig = plt.figure(figsize=(14, 7))
-    gs = fig.add_gridspec(nrows=1, ncols=2, width_ratios=[1, 3], wspace=0.05)
-    ax_text = fig.add_subplot(gs[0, 0])
-    ax_plot = fig.add_subplot(gs[0, 1])
+    # Create a single figure with GridSpec:
+    # - Column 0 (spans both rows): stats text box
+    # - Row 0, Cols 1-2: line chart (inbound/outbound over time)
+    # - Row 1, Col 1: bar chart (Payment Format)
+    # - Row 1, Col 2: bar chart (Currency)
+    fig = plt.figure(figsize=(16, 9))
+    gs = fig.add_gridspec(
+        nrows=2, ncols=3,
+        width_ratios=[1.2, 2, 2],
+        height_ratios=[2, 1],
+        wspace=0.15, hspace=0.35
+    )
 
-    # 2) Plot on ax_plot
-    ax_plot.plot(all_dates, daily_out.values, marker='o', label='Outbound (Amount Paid)')
-    ax_plot.plot(all_dates, daily_in.values, marker='o', linestyle='--', label='Inbound (Amount Received)')
-    ax_plot.set_title(f"Payments for Account {acct}")
-    ax_plot.set_xlabel('Date')
-    ax_plot.set_ylabel('Total Amount')
-    ax_plot.legend()
-    for label in ax_plot.get_xticklabels():
-        label.set_rotation(45)
+    ax_text = fig.add_subplot(gs[:, 0])       # spans both rows
+    ax_line = fig.add_subplot(gs[0, 1:])      # row 0, cols 1-2
+    ax_bar_fmt = fig.add_subplot(gs[1, 1])    # row 1, col 1
+    ax_bar_curr = fig.add_subplot(gs[1, 2])   # row 1, col 2
 
-    # 3) Put the stats in the left panel and hide its axes
+    # --- Line chart ---
+    if len(all_dates):
+        ax_line.plot(all_dates, daily_out.values, marker='o', label='Outbound (Amount Paid)')
+        ax_line.plot(all_dates, daily_in.values, marker='o', linestyle='--', label='Inbound (Amount Received)')
+        ax_line.set_title(f"Payments for Account {acct}")
+        ax_line.set_xlabel('Date')
+        ax_line.set_ylabel('Total Amount')
+        ax_line.legend()
+        for label in ax_line.get_xticklabels():
+            label.set_rotation(45)
+    else:
+        ax_line.text(0.5, 0.5, "No time series data", ha="center", va="center")
+        ax_line.axis('off')
+
+    # --- Stats panel ---
     ax_text.axis('off')
     ax_text.text(
         0.0, 1.0, stats_text,
@@ -230,27 +248,26 @@ for acct in outlier_accounts:
         bbox=dict(boxstyle="round", facecolor="white", alpha=0.75, edgecolor="0.5", linewidth=1)
     )
 
-    plt.show()
-
-    # -------------------------------------------------------
-    # Bar charts for Payment Format & Payment Currency
-    # -------------------------------------------------------
-    def _plot_bar_distribution(df_dist: pd.DataFrame, cat_col: str, title: str):
-        """Plot a simple bar chart from a distribution dataframe with Count/Percent columns."""
+    # --- Helper to draw bar charts on provided axes (no new figures) ---
+    def _plot_bar_distribution_on_ax(ax, df_dist: pd.DataFrame, cat_col: str, title: str):
         if df_dist.empty:
-            print(f"No data available for {title}")
+            ax.text(0.5, 0.5, f"No data for {title}", ha="center", va="center")
+            ax.set_axis_off()
             return
-        fig, ax = plt.subplots(figsize=(10, 5))
         ax.bar(df_dist[cat_col], df_dist["Count"])
         ax.set_title(title)
         ax.set_xlabel(cat_col)
         ax.set_ylabel("Count")
         # Annotate bars with count and percent
-        for i, (cnt, pct) in enumerate(zip(df_dist["Count"], df_dist["Percent"])):
-            ax.text(i, cnt, f"{int(cnt)} ({pct:.1f}%)", ha="center", va="bottom")
-        plt.xticks(rotation=45, ha="right")
-        plt.tight_layout()
-        plt.show()
+        for i, (cnt, pct) in enumerate(zip(df_dist["Count"], df_dist["Percent"])):  # type: ignore
+            ax.text(i, cnt, f"{int(cnt)} ({pct:.1f}%)", ha="center", va="bottom", fontsize=9)
+        ax.tick_params(axis='x', labelrotation=45)
+        ax.margins(x=0.05)
 
-    _plot_bar_distribution(fmt_df, "Payment Format", f"Distribution of Payment Format for Account {acct}")
-    _plot_bar_distribution(curr_df, "Currency", f"Distribution of Payment Currency for Account {acct}")
+    # --- Bar charts ---
+    _plot_bar_distribution_on_ax(ax_bar_fmt, fmt_df, "Payment Format", "Payment Format (Count & %)")
+    _plot_bar_distribution_on_ax(ax_bar_curr, curr_df, "Currency", "Payment Currency (Count & %)")
+
+    # Show everything in ONE window
+    plt.tight_layout()
+    plt.show()
