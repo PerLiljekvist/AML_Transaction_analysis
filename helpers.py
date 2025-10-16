@@ -8,6 +8,7 @@ import numpy as np
 from typing import Tuple, Dict, Any, Optional
 from typing import Optional
 import numpy as np
+from typing import Optional
 
 def make_df_from_file(file_path, column_name):
     df = pd.read_csv(file_path, sep=';')
@@ -761,6 +762,113 @@ def convert_column(
 
     return out, report
 
+# ---------- Pretty-print helpers (numbers & sectioning) ----------
+
+def _pretty_number(x, ndigits=6):
+    """
+    Format ints with thousands separators and floats with rounding.
+    Leaves booleans/None/NaN alone; returns strings for numbers.
+    """
+    try:
+        if x is None or (isinstance(x, float) and pd.isna(x)):
+            return x
+        if isinstance(x, (np.bool_, bool)):
+            return x
+        if isinstance(x, (int, np.integer)):
+            return f"{int(x):,}"
+        if isinstance(x, (float, np.floating)):
+            if np.isfinite(x):
+                # If value looks like an integer, show as integer
+                if float(x).is_integer():
+                    return f"{int(x):,}"
+                return f"{round(float(x), ndigits):,}"
+            return x
+        return x
+    except Exception:
+        return x
+
+def _resolve_count_valid_section(present_metrics: set) -> str:
+    """
+    Heuristic to decide which section 'count_valid' belongs to.
+    Preference order: Boolean > Datetime > Numeric, based on co-present metrics.
+    """
+    if {"true_count", "false_count"} & present_metrics:
+        return "Boolean"
+    if {"min_datetime", "max_datetime", "span_days"} & present_metrics:
+        return "Datetime"
+    if {"mean", "std", "median", "iqr"} & present_metrics:
+        return "Numeric"
+    return "Other"
+
+def _add_section_labels(report_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add a 'section' column based on metric names and co-present metrics.
+    Works without touching your existing analytics.
+    """
+    present = set(report_df["metric"].astype(str))
+    section_col = []
+    for m in report_df["metric"].astype(str):
+        if m in {
+            "column","dtype","logical_type","rows_total","missing_count","missing_pct",
+            "unique_count","unique_pct","unique_count_approx","memory_mb","workload_scope"
+        }:
+            section_col.append("Overview")
+        elif m == "count_valid":
+            section_col.append(_resolve_count_valid_section(present))
+        elif m in {
+            "min","q01","q05","q25","median","q75","q95","q99","max",
+            "mean","std","mad","iqr","skew","kurtosis_fisher",
+            "zeros_count","positive_count","negative_count",
+            "outliers_iqr_count","outliers_zscore_count"
+        }:
+            section_col.append("Numeric")
+        elif m in {"min_datetime","max_datetime","span_days","weekday_top","month_top"}:
+            section_col.append("Datetime")
+        elif m in {"true_count","false_count","true_pct","false_pct"}:
+            section_col.append("Boolean")
+        elif m in {
+            "top_value","shannon_entropy_bits",
+            "text_len_min","text_len_q25","text_len_median","text_len_mean",
+            "text_len_q75","text_len_q95","text_len_max"
+        }:
+            section_col.append("Top Values / Text")
+        else:
+            section_col.append("Other")
+    out = report_df.copy()
+    out.insert(0, "section", section_col)
+    return out
+
+def _format_report_numbers(report_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply number formatting to value/count/pct columns and sort rows nicely.
+    """
+    df = report_df.copy()
+    for col in ("value","count","pct"):
+        if col in df.columns:
+            df[col] = df[col].apply(lambda x: _pretty_number(x, ndigits=6))
+    # Stable sort by section -> metric -> rank (when present)
+    sort_cols = [c for c in ["section","metric","rank"] if c in df.columns]
+    if sort_cols:
+        df = df.sort_values(sort_cols, kind="stable")
+    return df
+
+def _with_blank_rows_between_sections(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Insert a single blank row between section blocks for CSV readability.
+    """
+    parts = []
+    for _, g in df.groupby("section", sort=False, as_index=False):
+        parts.append(g)
+        parts.append(pd.DataFrame([[""] * len(df.columns)], columns=df.columns))
+    if not parts:
+        return df
+    out = pd.concat(parts, ignore_index=True)
+    # drop trailing blank
+    return out.iloc[:-1] if len(out) else out
+
+
+# ---------- Your function with output-only enhancements ----------
+
 def univariate_eda(
     df: pd.DataFrame,
     column: str,
@@ -775,34 +883,11 @@ def univariate_eda(
     Compute a univariate EDA report for `df[column]`.
     Returns the report as a CSV string. Optionally writes to `write_path`.
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input dataframe (can be large).
-    column : str
-        Column name to analyze.
-    top_k : int, default 20
-        Number of top category levels to include for categorical/text features.
-    write_path : str or None
-        If provided, the CSV is also written to this path.
-    approx : bool, default False
-        If True, uses a sample (up to `sample_size`) for some heavy computations
-        (unique counts, quantiles, entropy, value counts).
-    sample_size : int, default 1_000_000
-        Sample size to use when `approx=True` and the column has more rows.
-    iqr_outlier_factor : float, default 1.5
-        Multiplier for IQR rule outliers.
-    z_thresh : float, default 3.0
-        Z-score threshold for outlier counting in numeric columns.
-
-    Notes
-    -----
-    - Keeps memory overhead low by operating directly on the Series where possible.
-    - For extremely high-cardinality categoricals, set `approx=True`.
-    - The CSV is "long-form": each row is a metric. For categorical/text,
-      top-k levels are appended as rows with their counts and percents.
+    Enhancements vs your original:
+    - Adds a 'section' column (Overview/Numeric/Datetime/Boolean/Top Values / Text).
+    - Formats numbers more readably (thousands separators, rounded floats).
+    - Inserts blank rows between sections in the CSV for readability.
     """
-
     if column not in df.columns:
         raise KeyError(f"Column '{column}' not found in DataFrame.")
 
@@ -833,13 +918,15 @@ def univariate_eda(
         n_unique = np.nan
         approx_unique = True
 
-    pct_unique = (n_unique / (len(s_work) - s_work.isna().sum()) * 100.0) if len(s_work) else np.nan
+    pct_unique = (
+        n_unique / (len(s_work) - int(s_work.isna().sum())) * 100.0
+        if len(s_work) else np.nan
+    )
 
     mem_bytes = int(s.memory_usage(deep=True))
     mem_mb = mem_bytes / (1024 ** 2)
 
     # Heuristic logical type
-    logical = None
     if pd.api.types.is_bool_dtype(dtype):
         logical = "boolean"
     elif pd.api.types.is_numeric_dtype(dtype):
@@ -849,8 +936,6 @@ def univariate_eda(
     elif pd.api.types.is_categorical_dtype(dtype):
         logical = "categorical"
     else:
-        # object/string -> decide between categorical-ish vs free text
-        # If many uniques relative to non-null -> treat as text
         nn = len(s_work) - int(s_work.isna().sum())
         logical = "text" if (nn > 0 and n_unique/nn > 0.5) else "categorical"
 
@@ -897,7 +982,6 @@ def univariate_eda(
             pos = int((valid > 0).sum())
             neg = int((valid < 0).sum())
 
-            # Write metrics
             add({"metric": "count_valid", "value": n_valid})
             for k in ["min", "1%", "5%", "25%", "50%", "75%", "95%", "99%", "max", "mean", "std"]:
                 key_map = {
@@ -933,17 +1017,23 @@ def univariate_eda(
             add({"metric": "max_datetime", "value": str(vmax)})
             add({"metric": "span_days", "value": round(span.total_seconds() / 86400.0, 6)})
 
-            # Lightweight calendar breakdowns
+            # Weekday distribution (named)
             try:
-                # Weekday distribution (top)
                 wd = valid.dt.weekday.value_counts(dropna=False)
                 wd_top = wd.head(min(7, top_k))
+                weekday_map = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}
                 for i, (wd_i, cnt) in enumerate(wd_top.items(), start=1):
-                    add({"metric": "weekday_top", "rank": i, "key": int(wd_i), "count": int(cnt),
-                         "pct": round(cnt / n_valid * 100.0, 6)})
+                    add({
+                        "metric": "weekday_top",
+                        "rank": i,
+                        "key": weekday_map.get(int(wd_i), str(wd_i)),
+                        "count": int(cnt),
+                        "pct": round(cnt / n_valid * 100.0, 6)
+                    })
             except Exception:
                 pass
 
+            # Month distribution (YYYY-MM)
             try:
                 m = valid.dt.to_period("M").astype(str).value_counts()
                 m_top = m.head(min(12, top_k))
@@ -957,8 +1047,8 @@ def univariate_eda(
     elif logical == "boolean":
         valid = s_work.dropna()
         n_valid = len(valid)
-        true_cnt = int((valid == True).sum())  # noqa: E712
-        false_cnt = int((valid == False).sum())  # noqa: E712
+        true_cnt = int((valid == True).sum())   # noqa: E712
+        false_cnt = int((valid == False).sum()) # noqa: E712
         add({"metric": "count_valid", "value": n_valid})
         add({"metric": "true_count", "value": true_cnt})
         add({"metric": "false_count", "value": false_cnt})
@@ -1012,19 +1102,23 @@ def univariate_eda(
             except Exception:
                 pass
 
-    # Finalize as DataFrame -> CSV string
+    # ---- Finalize as DataFrame -> CSV string with sections & formatting ----
     report_df = pd.DataFrame(report_rows)
 
     # Order columns nicely; keep any extras (rank/key/count/pct) to the right
     base_cols = ["metric", "value"]
     extra_cols = [c for c in report_df.columns if c not in base_cols]
-    # Put common extras in a friendly order
     preferred = ["rank", "key", "count", "pct"]
     ordered_extras = [c for c in preferred if c in extra_cols] + [c for c in extra_cols if c not in preferred]
     report_df = report_df[base_cols + ordered_extras]
 
-    csv_str = report_df.to_csv(index=False)
+    # Add sections, format numbers, and insert blank lines between sections
+    report_df = _add_section_labels(report_df)
+    report_df = _format_report_numbers(report_df)
+    csv_df = _with_blank_rows_between_sections(report_df)
+
+    csv_str = csv_df.to_csv(index=False)
     if write_path:
-        report_df.to_csv(write_path, index=False)
+        csv_df.to_csv(write_path, index=False)
 
     return csv_str
