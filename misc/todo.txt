@@ -1,0 +1,21 @@
+BACKLOG-ISH
+
+
+Add k-step depth to k-core/egonetwork. Will require broader filetering. Filtering on specific account cant be done during load.  
+Add preview networkx based visualisation in coded creating egonet file. 
+
+DONE!
+
+✅Make feature engineered file available for use with DBSCAN code. 
+✅Tidy up DBSCAN code to be more self contained (remove unecessary dependencies)
+✅Add payment format/currency graphs to existing display (now they are separate output windows.)
+✅Add aggregation of currency and format used for deep analysis of suspicious account
+✅OAdd more eye-friendly output to univariat EDA.File and visual table maybe. 
+✅One-hot ecdoding for payment currency  -> Add to feature creation code 
+✅Add out-/inbound counterpart split to output (visual and excel) for suspicious account deep dive. 
+✅One-hot encoding of Payment format to feature generating code
+✅Add out-/inbound counterpart split to output (visual and excel) for suspicious account deep dive. 
+✅Add excel or csv output to code for checking specific account
+✅In check flagged account -> visualize inbound transactions as well (add serie to existing graph)
+✅ Add new py file for buiding egonewtork files for suspicious account (see gpt conversation).
+✅Add summary to code for check flagged account. Number of in-/outbound tx during the period.mean, median mode etc. 
