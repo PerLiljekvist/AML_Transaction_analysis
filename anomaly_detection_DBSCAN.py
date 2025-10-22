@@ -1,102 +1,91 @@
+# dbscan_tx_anomalies.py
+# Run DBSCAN on a transaction features CSV and visualize results.
+
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import MiniBatchKMeans, DBSCAN
 from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
-import matplotlib.pyplot as plts
-import seaborn as sns
-from paths_and_stuff import *
+from sklearn.cluster import DBSCAN
+from datetime import datetime
 from helpers import *
-from simple_aml_functions import *
+from paths_and_stuff import *
 
-# ----------------------------
-# 1. Load and Preprocess Data. 
-# ----------------------------
+# -------- Config (edit if needed) --------
+OUTPUT_DIR = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))    
+INPUT_PATH = Path(OUTPUT_DIR + "/tx_features_only_2025-10-23.csv")   # your file
+OUTPUT_PATH = Path(OUTPUT_DIR + "/tdbscan_results_.csv")
+EPS = 8        # neighborhood radius in standardized space (↑ = fewer anomalies)
+MIN_SAMPLES = 5   # min points to form a dense region (↑ = fewer/smaller clusters)
 
-#folderOfTheDay = create_new_folder(folderPath, "20250715_account_nw")
-df = read_csv_custom(filePath, nrows=40000)
-# df = df.where(df['Is Laundering'] == 1).dropna().count()
-# print(df['Is Laundering'])
+def main():
+    # 1) Load CSV (let pandas sniff the delimiter: comma/semicolon/etc.)
+    df = pd.read_csv(INPUT_PATH, sep=None, engine="python")
 
-# ----------------------------
-# 2. Feature Engineerings
-# ----------------------------
+    # 2) Build feature matrix: numeric columns only, drop constants, fill NaNs with medians
+    X = df.select_dtypes(include=[np.number]).copy()
+    if X.empty:
+        raise ValueError("No numeric features found. Please include numeric columns in your file.")
+    X = X.loc[:, X.nunique(dropna=False) > 1]           # drop zero-variance columns
+    X = X.apply(lambda s: s.fillna(s.median()))         # simple, robust imputation
+    if X.shape[1] == 0:
+        raise ValueError("All numeric features were constant; DBSCAN needs variation.")
 
-df.rename(columns={
-    'Account': 'From_Account',
-    'Account.1': 'To_Account',
-    'Amount Received': 'Amount_Received',
-    'Amount Paid': 'Amount_Paid',
-    'Receiving Currency': 'Receiving_Currency',
-    'Payment Currency': 'Payment_Currency',
-    'Payment Format': 'Payment_Format',
-    'From Bank': 'From_Bank',
-    'To Bank': 'To_Bank',
-    'Is Laundering': 'Label'
-}, inplace=True)
+    # 3) Standardize features (DBSCAN is distance-based)
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
-df['Timestamp'] = pd.to_datetime(df['Timestamp'])
-df['Hour'] = df['Timestamp'].dt.hour
-df['Amount_Diff'] = abs(df['Amount_Paid'] - df['Amount_Received'])
-df['Same_Account'] = (df['From_Account'] == df['To_Account']).astype(int)
-df['Same_Bank'] = (df['From_Bank'] == df['To_Bank']).astype(int)
+    # 4) Run DBSCAN (label -1 = anomaly/noise)
+    db = DBSCAN(eps=EPS, min_samples=MIN_SAMPLES, n_jobs=-1)
+    labels = db.fit_predict(X_scaled)
 
-df = pd.get_dummies(df, columns=['Payment_Format'], drop_first=True)
+    # 5) 2D projection for plotting only (PCA)
+    pca = PCA(n_components=2, random_state=42)
+    coords2d = pca.fit_transform(X_scaled)
 
-features = [
-    'Amount_Received', 'Amount_Paid', 'Amount_Diff', 'Hour',
-    'Same_Bank', 'Same_Account'
-] + [col for col in df.columns if col.startswith('Payment_Format_')]
+    # 6) Attach results to original data and save
+    out = df.copy()
+    out["dbscan_label"] = labels
+    out["is_anomaly"] = (labels == -1)
+    out["pca_x"] = coords2d[:, 0]
+    out["pca_y"] = coords2d[:, 1]
+    out.to_csv(OUTPUT_PATH, index=False)
 
-X = df[features].copy()
+    # 7) Console table: show a compact anomalies view (top 25 rows)
+    #    Show up to 10 non-numeric "context" columns + key result columns.
+    non_num_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()[:10]
+    cols_to_show = non_num_cols + ["dbscan_label", "is_anomaly", "pca_x", "pca_y"]
+    anomalies = out[out["is_anomaly"]][cols_to_show].head(25)
+    print("\n=== Anomalies preview (top 25) ===")
+    if anomalies.empty:
+        print("No anomalies found at current EPS/MIN_SAMPLES.")
+    else:
+        print(anomalies.to_string(index=False))
 
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+    # 8) Quick summary
+    n_total = len(out)
+    n_anom = int(out["is_anomaly"].sum())
+    n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+    print("\n=== Summary ===")
+    print(f"Total rows: {n_total}")
+    print(f"Anomalies (-1): {n_anom} ({n_anom / max(n_total,1):.2%})")
+    print(f"Clusters (excluding -1): {n_clusters}")
+    print(f"Saved full results to: {OUTPUT_PATH.resolve()}")
 
-# ----------------------------
-# 3. Apply Anomaly Detection
-# ----------------------------
+    # 9) Simple scatter plot (2D PCA). Cross marker for anomalies.
+    plt.figure(figsize=(8, 6))
+    mask_anom = out["is_anomaly"]
+    plt.scatter(out.loc[~mask_anom, "pca_x"], out.loc[~mask_anom, "pca_y"],
+                s=10, alpha=0.6, label="Clustered")
+    plt.scatter(out.loc[mask_anom, "pca_x"], out.loc[mask_anom, "pca_y"],
+                s=30, alpha=0.9, marker="x", label="Anomalies (-1)")
+    plt.xlabel("PCA 1")
+    plt.ylabel("PCA 2")
+    plt.title("DBSCAN on Transaction Features (2D PCA)")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
-## 3.2 DBSCAN
-print("[+] Running DBSCAN...")
-dbscan = DBSCAN(eps=1.5, min_samples=2)
-df['dbscan_cluster'] = dbscan.fit_predict(X_scaled)
-
-# ----------------------------
-# 4. Show Results
-# ----------------------------
-
-print("\n[+] Detected anomalies:")
-print("  - DBSCAN flagged:", (df['dbscan_cluster'] == -1).sum())
-
-# Show table of potential anomalies
-anomalies_df = df[
-    (df['dbscan_cluster'] == -1) 
-]
-
-print("\n[+] Top anomalies found:")
-print(anomalies_df[['dbscan_cluster']])
-
-# ----------------------------
-# 5. Optional Plot (pairplot)
-# ----------------------------
-
-plt.figure(figsize=(10, 6))
-
-# Assign a color to each cluster (including noise, which is -1)
-unique_clusters = df["dbscan_cluster"].unique()
-palette = sns.color_palette("husl", n_colors=len(unique_clusters))
-color_map = {cluster: palette[i] for i, cluster in enumerate(unique_clusters)}
-
-for cluster_id in unique_clusters:
-    cluster_points = df[df['dbscan_cluster'] == cluster_id]
-    plt.scatter(cluster_points['Amount_Paid'], cluster_points['Amount_Diff'],
-                s=100, label=f'Cluster {cluster_id}', color=color_map[cluster_id])
-
-plt.title('DBSCAN Clustering Results')
-plt.xlabel('Amount_Paid')
-plt.ylabel('Amount_Diff')
-plt.legend()
-plt.show()
-
+if __name__ == "__main__":
+    main()

@@ -162,7 +162,7 @@ def attach_sender_receiver_features(tx: pd.DataFrame,
 # ===========================
 # Load (semicolon default; change `csv_sep` above if needed)
 
-df = read_csv_custom(filePath, nrows=1000)
+df = read_csv_custom(filePath, nrows=100000)
 
 # Safe numeric casts for amounts (keep original text columns too if you want)s
 for amount_col in ["Amount Paid", "Amount Received"]:
@@ -178,18 +178,18 @@ for col in ["Account", "Account.1", "From Bank", "To Bank", "Payment Format"]:
 tx = engineer_tx_features(df)
 
 # 2) Account aggregates
-acc = compute_account_features(df)
+#acc = compute_account_features(df)
 
 # 3) Uniques + HHI, merged into acc
-uniq_hhi = compute_uniques_and_hhi(df)
-acc = acc.merge(uniq_hhi, on="Account", how="left")
+#uniq_hhi = compute_uniques_and_hhi(df)
+#acc = acc.merge(uniq_hhi, on="Account", how="left")
 
 # 4) Tx table with sender/receiver aggregates
-tx_model = attach_sender_receiver_features(tx, acc, sender_suffix="_S", receiver_suffix="_R")
+#tx_model = attach_sender_receiver_features(tx, acc, sender_suffix="_S", receiver_suffix="_R")
 
 # Normalize timestamp if present (string format for easy CSV use)
-if "Timestamp" in tx_model.columns:
-    tx_model["Timestamp"] = pd.to_datetime(tx_model["Timestamp"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
+#if "Timestamp" in tx_model.columns:
+    #tx_model["Timestamp"] = pd.to_datetime(tx_model["Timestamp"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
 
 # 5) Save outputs
 today = datetime.now().strftime("%Y-%m-%d")
@@ -202,17 +202,17 @@ tx_out = _reorder_with_original_first(df, tx) if set(df.columns).issubset(tx.col
 tx_out.to_csv(out_dir / f"tx_features_only_{today}.csv", sep=csv_sep, index=False)
 
 # b) Per-account aggregates (with uniques+HHI)
-acc.to_csv(out_dir / f"account_features_{today}.csv", sep=csv_sep, index=False)
+#acc.to_csv(out_dir / f"account_features_{today}.csv", sep=csv_sep, index=False)
 
 # c) Uniques + HHI standalone (optional but handy)
-uniq_hhi.to_csv(out_dir / f"account_uniques_hhi_{today}.csv", sep=csv_sep, index=False)
+#uniq_hhi.to_csv(out_dir / f"account_uniques_hhi_{today}.csv", sep=csv_sep, index=False)
 
 # d) Full modeling table
-tx_model_out = _reorder_with_original_first(df, tx_model) if set(df.columns).issubset(tx_model.columns) else tx_model.copy()
-tx_model_out.to_csv(out_dir / f"tx_model_with_sender_receiver_features_{today}.csv", sep=csv_sep, index=False)
+#tx_model_out = _reorder_with_original_first(df, tx_model) if set(df.columns).issubset(tx_model.columns) else tx_model.copy()
+#tx_model_out.to_csv(out_dir / f"tx_model_with_sender_receiver_features_{today}.csv", sep=csv_sep, index=False)
 
 print("\n✅ Feature export completed. Files saved to:")
 print(f"- {out_dir / f'tx_features_only_{today}.csv'}")
-print(f"- {out_dir / f'account_features_{today}.csv'}")
-print(f"- {out_dir / f'account_uniques_hhi_{today}.csv'}")
-print(f"- {out_dir / f'tx_model_with_sender_receiver_features_{today}.csv'}")
+#print(f"- {out_dir / f'account_features_{today}.csv'}")
+#print(f"- {out_dir / f'account_uniques_hhi_{today}.csv'}")
+#print(f"- {out_dir / f'tx_model_with_sender_receiver_features_{today}.csv'}")
