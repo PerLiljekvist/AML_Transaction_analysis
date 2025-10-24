@@ -59,11 +59,12 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
         .str.lower()
         .replace({"nan": "unknown"})
     )
-
+    
     pf_dummies = pd.get_dummies(cats, prefix="PF", dtype="uint8")
     d = pd.concat([d, pf_dummies], axis=1)
     d = d.drop(columns=["Payment Format"])
 
+     # Add one-hot encoded feature for payment currency
     cats = (
         d["Payment Currency"]
         .astype(str)
@@ -162,7 +163,7 @@ def attach_sender_receiver_features(tx: pd.DataFrame,
 # ===========================
 # Load (semicolon default; change `csv_sep` above if needed)
 
-df = read_csv_custom(filePath, nrows=100000)
+df = read_csv_custom(filePath, nrows=50000)
 
 # Safe numeric casts for amounts (keep original text columns too if you want)s
 for amount_col in ["Amount Paid", "Amount Received"]:
