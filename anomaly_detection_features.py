@@ -163,7 +163,8 @@ def attach_sender_receiver_features(tx: pd.DataFrame,
 # ===========================
 # Load (semicolon default; change `csv_sep` above if needed)
 
-df = read_csv_custom(filePath, nrows=100000)
+df = read_csv_custom(filePath, nrows=10000)
+df = df.sample(n=10)
 
 # Safe numeric casts for amounts (keep original text columns too if you want)s
 for amount_col in ["Amount Paid", "Amount Received"]:
