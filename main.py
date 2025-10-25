@@ -5,22 +5,28 @@ import os
 from datetime import datetime
 import pandas as pd
 import matplotlib.pyplot as plt
+import time
 
 #from anomaly_detection_get_tx_for_account import *
 #from anomaly_detection_egonet import *
 
 ####################GOOD TO HAVE READY to RUN###############
+start = time.time()
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
 newFolder = create_new_folder(folderPath, TODAY)
 filePath_out = newFolder + "/univ_eda.csv"
 
-df = read_csv_custom(filePath, nrows=1000000)
+df = read_csv_custom(filePath)
 df = df.sample(n=10000)
 
 df_grouped = df.groupby(["Is Laundering"]).agg(
     agg_col = pd.NamedAgg(column="Is Laundering", aggfunc="count"))
 print(df_grouped)
+
+end = time.time()
+length = end - start
+print("It took", round(length,1), "seconds!")
 
 # plt.hist(df['Is Laundering'])
 # plt.show()
