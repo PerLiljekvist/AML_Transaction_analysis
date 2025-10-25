@@ -4,23 +4,34 @@ from simple_aml_functions import *
 import os
 from datetime import datetime
 import pandas as pd
+import matplotlib.pyplot as plt
+
 #from anomaly_detection_get_tx_for_account import *
 #from anomaly_detection_egonet import *
 
-
 ####################GOOD TO HAVE READY to RUN###############
 
-newFolder = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
+TODAY = datetime.now().strftime("%Y-%m-%d")
+newFolder = create_new_folder(folderPath, TODAY)
 filePath_out = newFolder + "/univ_eda.csv"
-df = read_csv_custom(filePath, nrows=5000, )
 
-print(univariate_eda(df, column='Account', write_path=filePath_out))
+df = read_csv_custom(filePath, nrows=1000000)
+df = df.sample(n=10000)
+
+df_grouped = df.groupby(["Is Laundering"]).agg(
+    agg_col = pd.NamedAgg(column="Is Laundering", aggfunc="count"))
+print(df_grouped)
+
+# plt.hist(df['Is Laundering'])
+# plt.show()
+
+#print(univariate_eda(df, column='Is Laundering', write_path=filePath_out))
 
 #inspect_csv_file(filePath)
 
 #print(df.groupby('Payment Currency').size().reset_index(name='counts'))
 
-# df = read_csv_custom(filePath, nrows=500000)
+# df = read_csv_custom(filePath, nrows=1000000)
 # outbound, inbound, min_d, max_d = top_accounts_by_transactions(df)
 # print("Outbound top accounts:\n", outbound)
 # print("Inbound top accounts:\n", inbound)
