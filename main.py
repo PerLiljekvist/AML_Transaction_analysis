@@ -17,22 +17,25 @@ TODAY = datetime.now().strftime("%Y-%m-%d")
 newFolder = create_new_folder(folderPath, TODAY)
 filePath_out = newFolder + "/univ_eda.csv"
 
-df = read_csv_custom(filePath,nrows=1000000)
-df_sampled = df.sample(n=10000)
+df = read_csv_custom(filePath,nrows=100000)
+df_sampled = df.sample(n=1000)
 
 df_grouped = df_sampled.groupby(["Is Laundering"]).agg(
-    agg_col = pd.NamedAgg(column="Is Laundering", aggfunc="count"))
-print(df_grouped)
+    agg_col = pd.NamedAgg(column="Is Laundering", aggfunc="count")).sort_values('agg_col', ascending=False)
+
 
 #Compare raw and sampled histogram
-# fig = plt.figure(figsize=(16, 9))
-# plt.subplot(1,2,1)
-# plt.title("Raw")
-# plt.hist(df['Is Laundering'])
-# plt.subplot(1, 2, 2)
-# plt.title("Sampled")
-# plt.hist(df_sampled['Is Laundering'])
-# plt.show()
+fig = plt.figure(figsize=(14, 4))
+plt.subplot(1,2,1)
+plt.title("Raw")
+plt.xticks(rotation= 40)
+plt.hist(df['Payment Format'])
+
+plt.subplot(1, 2, 2)
+plt.title("Sampled")
+plt.xticks(rotation= 40)
+plt.hist(df_sampled['Payment Format'])
+plt.show()
 
 #print(univariate_eda(df, column='Is Laundering', write_path=filePath_out))
 
