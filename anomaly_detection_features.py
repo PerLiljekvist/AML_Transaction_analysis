@@ -1,13 +1,13 @@
 # ===========================
 # AML Tx Feature Engineering - Lean Ad-hoc Version
 # ===========================
-import pandas as pd
+import pandas as pd 
 import numpy as np
 from pathlib import Path
 from datetime import datetime
 from helpers import *
 from paths_and_stuff import *
-
+from scipy.stats import entropy
 # ---------------------------
 # Config (change these two)
 # ---------------------------
@@ -20,6 +20,11 @@ output_dir = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
 # ---------------------------
 def _to_num(s): 
     return pd.to_numeric(s, errors="coerce")
+
+def shannon_entropy(x):
+    counts = np.bincount(pd.Series(x).astype(int))  # count occurrences
+    probs = counts[counts > 0] / counts.sum()       # probabilities
+    return entropy(probs, base=2)   
 
 def _ensure_columns(df: pd.DataFrame, cols):
     d = df.copy()
@@ -72,10 +77,14 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
         .str.lower()
         .replace({"nan": "unknown"})
     )
-
+   
     pf_dummies = pd.get_dummies(cats, prefix="PC", dtype="uint8")
     d = pd.concat([d, pf_dummies], axis=1)
     d = d.drop(columns=["Payment Currency"])
+
+     #Add entropy feature -> track entropy over time (The last week.)
+
+    d["amnt_paid_entropy_7"] = d["Amount Paid"].rolling(window=14).apply(shannon_entropy, raw=False)
 
     return d
 
@@ -163,8 +172,9 @@ def attach_sender_receiver_features(tx: pd.DataFrame,
 # ===========================
 # Load (semicolon default; change `csv_sep` above if needed)
 
-df = read_csv_custom(filePath, nrows=10000)
-df = df.sample(n=10)
+df = read_csv_custom(filePath, nrows=100000)
+df = df.sample(n=5000)
+df.sample()
 
 # Safe numeric casts for amounts (keep original text columns too if you want)s
 for amount_col in ["Amount Paid", "Amount Received"]:
