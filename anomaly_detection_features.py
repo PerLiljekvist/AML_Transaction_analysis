@@ -42,11 +42,12 @@ def _reorder_with_original_first(original_df: pd.DataFrame, enriched_df: pd.Data
 # 1) Row-level (transaction) features
 # ---------------------------
 def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
-    d = _ensure_columns(df, ["From Bank", "To Bank", "Amount Paid", "Amount Received", "Payment Format"])
+    d = _ensure_columns(df, ["Timestamp", "From Bank", "To Bank", "Amount Paid", "Amount Received", "Payment Format"])
 
     # Safe casts
     d["From Bank"]      = d["From Bank"].astype(str)
     d["To Bank"]        = d["To Bank"].astype(str)
+    d["Timestamp"]      = pd.to_datetime(df['Timestamp'], errors='coerce')
     amt_paid            = _to_num(d["Amount Paid"])
     amt_rec             = _to_num(d["Amount Received"])
 
@@ -56,7 +57,7 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
     d["Amount_Ratio"]   = np.where(amt_rec > 0, amt_paid / amt_rec, np.nan)
     d["Is_Reinvestment"] = d["Payment Format"].astype(str).str.contains("reinvest", case=False, na=False).astype("Int8")
      
-    # Add one-hot encoded feature for payment format
+    # One-hot encoded feature for payment format
     cats = (
         d["Payment Format"]
         .astype(str)
@@ -69,7 +70,7 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
     d = pd.concat([d, pf_dummies], axis=1)
     d = d.drop(columns=["Payment Format"])
 
-     # Add one-hot encoded feature for payment currency
+     # One-hot encoded feature for payment currency
     cats = (
         d["Payment Currency"]
         .astype(str)
@@ -82,9 +83,13 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
     d = pd.concat([d, pf_dummies], axis=1)
     d = d.drop(columns=["Payment Currency"])
 
-     #Add entropy feature -> track entropy over time (The last week.)
+     #Rolling window entropy feature
 
     d["amnt_paid_entropy_7"] = d["Amount Paid"].rolling(window=14).apply(shannon_entropy, raw=False)
+
+    #Weekday for transaction
+
+    d["weekday_of_transaction"] = d["Timestamp"].dt.day_of_week
 
     return d
 
@@ -172,9 +177,9 @@ def attach_sender_receiver_features(tx: pd.DataFrame,
 # ===========================
 # Load (semicolon default; change `csv_sep` above if needed)
 
-df = read_csv_custom(filePath, nrows=100000)
-df = df.sample(n=5000)
-df.sample()
+df = read_csv_custom(filePath, nrows=1000)
+df = df.sample(n=50)
+#df.sample()
 
 # Safe numeric casts for amounts (keep original text columns too if you want)s
 for amount_col in ["Amount Paid", "Amount Received"]:
