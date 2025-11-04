@@ -18,10 +18,13 @@ newFolder = create_new_folder(folderPath, TODAY)
 filePath_out = newFolder + "/univ_eda.csv"
 
 df = read_csv_custom(filePath,nrows=100000)
-df_sampled = df.sample(n=1000)
+df_unsampled = df.sort_values(by='Payment Format', ascending=True)
+df_sampled = df.sample(n=10000).sort_values(by='Payment Format', ascending=True)
+# print(df_sampled) 
+# quit()
 
-df_grouped = df_sampled.groupby(["Is Laundering"]).agg(
-    agg_col = pd.NamedAgg(column="Is Laundering", aggfunc="count")).sort_values('agg_col', ascending=False)
+# df_grouped = df_sampled.groupby(["Is Laundering"]).agg(
+#     agg_col = pd.NamedAgg(column="Is Laundering", aggfunc="count")).sort_values('agg_col', ascending=False)
 
 
 #Compare raw and sampled histogram
@@ -29,7 +32,7 @@ fig = plt.figure(figsize=(14, 4))
 plt.subplot(1,2,1)
 plt.title("Raw")
 plt.xticks(rotation= 40)
-plt.hist(df['Payment Format'])
+plt.hist(df_unsampled['Payment Format'])
 
 plt.subplot(1, 2, 2)
 plt.title("Sampled")
