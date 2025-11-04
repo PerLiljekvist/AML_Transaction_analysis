@@ -8,6 +8,8 @@ from datetime import datetime
 from helpers import *
 from paths_and_stuff import *
 from scipy.stats import entropy
+import time 
+
 # ---------------------------
 # Config (change these two)
 # ---------------------------
@@ -83,15 +85,19 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
     d = pd.concat([d, pf_dummies], axis=1)
     d = d.drop(columns=["Payment Currency"])
 
-     #Rolling window entropy feature
+     #Rolling window entropy feature -> runnable but should be changed to acocunt-level
 
-    d["amnt_paid_entropy_7"] = d["Amount Paid"].rolling(window=14).apply(shannon_entropy, raw=False)
+    #d["amnt_paid_entropy_7"] = d["Amount Paid"].rolling(window=14).apply(shannon_entropy, raw=False)
 
     #Weekday for transaction
 
     d["weekday_of_transaction"] = d["Timestamp"].dt.day_of_week
 
-    return d
+    #time of day for transaction
+
+    d["hour_of_transaction"] = d["Timestamp"].dt.hour
+
+    return d    
 
 # ---------------------------
 # 2) Account-level aggregates (sender+receiver)
@@ -176,9 +182,9 @@ def attach_sender_receiver_features(tx: pd.DataFrame,
 # MAIN
 # ===========================
 # Load (semicolon default; change `csv_sep` above if needed)
-
-df = read_csv_custom(filePath, nrows=1000)
-df = df.sample(n=50)
+start = time.time()
+df = read_csv_custom(filePath, nrows=1000000)
+#df = df.sample(n=1000)
 #df.sample()
 
 # Safe numeric casts for amounts (keep original text columns too if you want)s
@@ -217,6 +223,10 @@ out_dir = Path(output_dir)
 # a) Row-level features only
 tx_out = _reorder_with_original_first(df, tx) if set(df.columns).issubset(tx.columns) else tx.copy()
 tx_out.to_csv(out_dir / f"tx_features_only_{today}.csv", sep=csv_sep, index=False)
+
+end = time.time()
+length = end - start
+print("Execution time:", length, "seconds!" )
 
 # b) Per-account aggregates (with uniques+HHI)
 #acc.to_csv(out_dir / f"account_features_{today}.csv", sep=csv_sep, index=False)
