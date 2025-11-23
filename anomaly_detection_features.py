@@ -28,6 +28,28 @@ def shannon_entropy(x):
     probs = counts[counts > 0] / counts.sum()       # probabilities
     return entropy(probs, base=2)   
 
+def shannon_entropy_binned(x, bins=10):
+    """
+    Shannon entropy for numeric series using binning (robust for floats/heavy tails).
+    Returns NaN if too few values.
+    """
+    s = pd.Series(x)
+    s = pd.to_numeric(s, errors="coerce").dropna()
+    if len(s) < 2:
+        return np.nan
+
+    # Use quantile bins to handle heavy-tailed AML amounts
+    try:
+        cats = pd.qcut(s, q=min(bins, s.nunique()), duplicates="drop")
+        probs = cats.value_counts(normalize=True)
+    except Exception:
+        # Fallback to equal-width bins if qcut fails
+        hist, _ = np.histogram(s, bins=min(bins, len(s)))
+        probs = hist[hist > 0] / hist.sum()
+
+    return entropy(probs, base=2)
+
+
 def _ensure_columns(df: pd.DataFrame, cols):
     d = df.copy()
     for c in cols:
@@ -90,11 +112,9 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
     #d["amnt_paid_entropy_7"] = d["Amount Paid"].rolling(window=14).apply(shannon_entropy, raw=False)
 
     #Weekday for transaction
-
     d["weekday_of_transaction"] = d["Timestamp"].dt.day_of_week
 
     #time of day for transaction
-
     d["hour_of_transaction"] = d["Timestamp"].dt.hour
 
     return d    
@@ -113,6 +133,9 @@ def compute_account_features(df: pd.DataFrame) -> pd.DataFrame:
         avg_out_amt=("Amount Paid", lambda x: _to_num(x).mean()),
         max_out_amt=("Amount Paid", lambda x: _to_num(x).max()),
         min_out_amt=("Amount Paid", lambda x: _to_num(x).min()),
+
+        # NEW: entropy of outbound amounts per sender account
+        entropy_out_amt=("Amount Paid", lambda x: shannon_entropy_binned(_to_num(x))),
     )
 
     inb = d.groupby("Account.1", dropna=False).agg(
@@ -121,12 +144,16 @@ def compute_account_features(df: pd.DataFrame) -> pd.DataFrame:
         avg_in_amt=("Amount Received", lambda x: _to_num(x).mean()),
         max_in_amt=("Amount Received", lambda x: _to_num(x).max()),
         min_in_amt=("Amount Received", lambda x: _to_num(x).min()),
+
+        # NEW: entropy of inbound amounts per receiver account
+        entropy_in_amt=("Amount Received", lambda x: shannon_entropy_binned(_to_num(x))),
     )
     inb.index.name = "Account"
 
     acc = out.join(inb, how="outer").reset_index()
     acc["net_flow_amt"] = (acc["total_out_amt"].fillna(0) - acc["total_in_amt"].fillna(0))
     return acc
+
 
 # ---------------------------
 # 3) Uniques + HHI (per account)
@@ -184,8 +211,7 @@ def attach_sender_receiver_features(tx: pd.DataFrame,
 # Load (semicolon default; change `csv_sep` above if needed)
 start = time.time()
 df = read_csv_custom(filePath, nrows=1000000)
-#df = df.sample(n=1000)
-#df.sample()
+df = df.sample(n=1000)
 
 # Safe numeric casts for amounts (keep original text columns too if you want)s
 for amount_col in ["Amount Paid", "Amount Received"]:
@@ -201,18 +227,18 @@ for col in ["Account", "Account.1", "From Bank", "To Bank", "Payment Format"]:
 tx = engineer_tx_features(df)
 
 # 2) Account aggregates
-#acc = compute_account_features(df)
+acc = compute_account_features(df)
 
 # 3) Uniques + HHI, merged into acc
-#uniq_hhi = compute_uniques_and_hhi(df)
-#acc = acc.merge(uniq_hhi, on="Account", how="left")
+uniq_hhi = compute_uniques_and_hhi(df)
+acc = acc.merge(uniq_hhi, on="Account", how="left")
 
 # 4) Tx table with sender/receiver aggregates
-#tx_model = attach_sender_receiver_features(tx, acc, sender_suffix="_S", receiver_suffix="_R")
+tx_model = attach_sender_receiver_features(tx, acc, sender_suffix="_S", receiver_suffix="_R")
 
 # Normalize timestamp if present (string format for easy CSV use)
-#if "Timestamp" in tx_model.columns:
-    #tx_model["Timestamp"] = pd.to_datetime(tx_model["Timestamp"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
+if "Timestamp" in tx_model.columns:
+    tx_model["Timestamp"] = pd.to_datetime(tx_model["Timestamp"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
 
 # 5) Save outputs
 today = datetime.now().strftime("%Y-%m-%d")
@@ -229,17 +255,17 @@ length = end - start
 print("Execution time:", length, "seconds!" )
 
 # b) Per-account aggregates (with uniques+HHI)
-#acc.to_csv(out_dir / f"account_features_{today}.csv", sep=csv_sep, index=False)
+acc.to_csv(out_dir / f"account_features_{today}.csv", sep=csv_sep, index=False)
 
 # c) Uniques + HHI standalone (optional but handy)
-#uniq_hhi.to_csv(out_dir / f"account_uniques_hhi_{today}.csv", sep=csv_sep, index=False)
+uniq_hhi.to_csv(out_dir / f"account_uniques_hhi_{today}.csv", sep=csv_sep, index=False)
 
 # d) Full modeling table
-#tx_model_out = _reorder_with_original_first(df, tx_model) if set(df.columns).issubset(tx_model.columns) else tx_model.copy()
-#tx_model_out.to_csv(out_dir / f"tx_model_with_sender_receiver_features_{today}.csv", sep=csv_sep, index=False)
+tx_model_out = _reorder_with_original_first(df, tx_model) if set(df.columns).issubset(tx_model.columns) else tx_model.copy()
+tx_model_out.to_csv(out_dir / f"tx_model_with_sender_receiver_features_{today}.csv", sep=csv_sep, index=False)
 
 print("\n✅ Feature export completed. Files saved to:")
 print(f"- {out_dir / f'tx_features_only_{today}.csv'}")
-#print(f"- {out_dir / f'account_features_{today}.csv'}")
-#print(f"- {out_dir / f'account_uniques_hhi_{today}.csv'}")
-#print(f"- {out_dir / f'tx_model_with_sender_receiver_features_{today}.csv'}")
+print(f"- {out_dir / f'account_features_{today}.csv'}")
+print(f"- {out_dir / f'account_uniques_hhi_{today}.csv'}")
+print(f"- {out_dir / f'tx_model_with_sender_receiver_features_{today}.csv'}")

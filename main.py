@@ -17,9 +17,9 @@ TODAY = datetime.now().strftime("%Y-%m-%d")
 newFolder = create_new_folder(folderPath, TODAY)
 filePath_out = newFolder + "/univ_eda.csv"
 
-df = read_csv_custom(filePath,nrows=100000)
-df_unsampled = df.sort_values(by='Payment Format', ascending=True)
-df_sampled = df.sample(n=10000).sort_values(by='Payment Format', ascending=True)
+df = read_csv_custom(filePath,nrows=10000)
+df_unsampled = df.sort_values(by='Payment Format', ascending=False)
+df_sampled = df.sample(n=1000).sort_values(by='Payment Format', ascending=False)
 # print(df_sampled) 
 # quit()
 
