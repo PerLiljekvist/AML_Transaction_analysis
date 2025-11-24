@@ -9,6 +9,7 @@ from helpers import *
 from paths_and_stuff import *
 from scipy.stats import entropy
 import time 
+from sklearn.preprocessing import RobustScaler
 
 # ---------------------------
 # Config (change these two)
@@ -49,7 +50,6 @@ def shannon_entropy_binned(x, bins=10):
 
     return entropy(probs, base=2)
 
-
 def _ensure_columns(df: pd.DataFrame, cols):
     d = df.copy()
     for c in cols:
@@ -61,6 +61,61 @@ def _reorder_with_original_first(original_df: pd.DataFrame, enriched_df: pd.Data
     orig_cols = [c for c in original_df.columns if c in enriched_df.columns]
     new_cols  = [c for c in enriched_df.columns if c not in orig_cols]
     return enriched_df[orig_cols + new_cols]
+
+# ---------------------------
+# PRE-MODEL PREP (lean, reusable)
+# ---------------------------
+def pre_model_prep(df: pd.DataFrame,
+                   id_like=("Account", "Account.1", "From Bank", "To Bank", "Timestamp"),
+                   nan_flag_cols=("entropy_out_amt", "entropy_in_amt", "HHI_out", "HHI_in",
+                                  "unique_receivers", "unique_senders"),
+                   impute_zero_if=("entropy", "HHI"),
+                   log1p_cols=("total_out_amt", "total_in_amt", "avg_out_amt", "avg_in_amt",
+                               "max_out_amt", "max_in_amt", "min_out_amt", "min_in_amt",
+                               "net_flow_amt", "Amount Paid", "Amount Received")):
+    """
+    Minimal pre-model prep:
+    - selects numeric features
+    - adds NaN-missingness flags for key sparse features
+    - imputes NaNs (0 for entropy/HHI; median otherwise)
+    - log1p on heavy-tailed amount columns if present
+    - robust scales everything (good for power-law / heavy tails)
+
+    Returns:
+        X_scaled (np.ndarray), feature_names (list[str]), scaler (fitted RobustScaler)
+    """
+    d = df.copy()
+
+    # 1) numeric-only feature matrix (exclude id-like columns)
+    num_cols = [
+        c for c in d.columns
+        if c not in id_like and pd.api.types.is_numeric_dtype(d[c])
+    ]
+    X = d[num_cols].copy()
+
+    # 2) missingness indicator flags
+    for c in nan_flag_cols:
+        if c in X.columns:
+            X[f"{c}_missing"] = X[c].isna().astype("uint8")
+
+    # 3) log1p on heavy-tailed amount-ish columns (only if exists)
+    for c in log1p_cols:
+        if c in X.columns:
+            X[c] = np.log1p(X[c].clip(lower=0))
+
+    # 4) impute NaNs
+    for c in X.columns:
+        if X[c].isna().any():
+            if any(key in c for key in impute_zero_if):
+                X[c] = X[c].fillna(0)
+            else:
+                X[c] = X[c].fillna(X[c].median())
+
+    # 5) robust scaling
+    scaler = RobustScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    return X_scaled, list(X.columns), scaler
 
 # ---------------------------
 # 1) Row-level (transaction) features
@@ -108,7 +163,6 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
     d = d.drop(columns=["Payment Currency"])
 
      #Rolling window entropy feature -> runnable but should be changed to acocunt-level
-
     #d["amnt_paid_entropy_7"] = d["Amount Paid"].rolling(window=14).apply(shannon_entropy, raw=False)
 
     #Weekday for transaction
@@ -153,7 +207,6 @@ def compute_account_features(df: pd.DataFrame) -> pd.DataFrame:
     acc = out.join(inb, how="outer").reset_index()
     acc["net_flow_amt"] = (acc["total_out_amt"].fillna(0) - acc["total_in_amt"].fillna(0))
     return acc
-
 
 # ---------------------------
 # 3) Uniques + HHI (per account)
@@ -236,14 +289,18 @@ acc = acc.merge(uniq_hhi, on="Account", how="left")
 # 4) Tx table with sender/receiver aggregates
 tx_model = attach_sender_receiver_features(tx, acc, sender_suffix="_S", receiver_suffix="_R")
 
+# ---------------------------
+# Pre-model matrices (for later codebases)
+# ---------------------------
+X_acc, acc_feat_names, acc_scaler = pre_model_prep(acc)
+X_tx_model, tx_model_feat_names, tx_model_scaler = pre_model_prep(tx_model)
+
 # Normalize timestamp if present (string format for easy CSV use)
 if "Timestamp" in tx_model.columns:
     tx_model["Timestamp"] = pd.to_datetime(tx_model["Timestamp"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
 
 # 5) Save outputs
 today = datetime.now().strftime("%Y-%m-%d")
-# out_dir = Path(output_dir) / today
-# out_dir.mkdir(parents=True, exist_ok=True)
 out_dir = Path(output_dir)
 
 # a) Row-level features only
@@ -264,8 +321,16 @@ uniq_hhi.to_csv(out_dir / f"account_uniques_hhi_{today}.csv", sep=csv_sep, index
 tx_model_out = _reorder_with_original_first(df, tx_model) if set(df.columns).issubset(tx_model.columns) else tx_model.copy()
 tx_model_out.to_csv(out_dir / f"tx_model_with_sender_receiver_features_{today}.csv", sep=csv_sep, index=False)
 
+# Save pre-model versions for modeling pipeline
+pd.DataFrame(X_acc, columns=acc_feat_names).to_csv(out_dir / f"acc_pre_model_{today}.csv", sep=csv_sep, index=False)
+pd.DataFrame(X_tx_model, columns=tx_model_feat_names).to_csv(out_dir / f"tx_model_pre_model_{today}.csv", sep=csv_sep, index=False)
+
+
 print("\n✅ Feature export completed. Files saved to:")
 print(f"- {out_dir / f'tx_features_only_{today}.csv'}")
 print(f"- {out_dir / f'account_features_{today}.csv'}")
 print(f"- {out_dir / f'account_uniques_hhi_{today}.csv'}")
 print(f"- {out_dir / f'tx_model_with_sender_receiver_features_{today}.csv'}")
+print(f"- {out_dir / f'acc_pre_model_{today}.csv'}")
+print(f"- {out_dir / f'tx_model_pre_model_{today}.csv'}")
+
