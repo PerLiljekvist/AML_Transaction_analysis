@@ -57,11 +57,6 @@ def _ensure_columns(df: pd.DataFrame, cols):
             d[c] = np.nan
     return d
 
-def _reorder_with_original_first(original_df: pd.DataFrame, enriched_df: pd.DataFrame) -> pd.DataFrame:
-    orig_cols = [c for c in original_df.columns if c in enriched_df.columns]
-    new_cols  = [c for c in enriched_df.columns if c not in orig_cols]
-    return enriched_df[orig_cols + new_cols]
-
 # ---------------------------
 # PRE-MODEL PREP (lean, reusable)
 # ---------------------------
@@ -70,8 +65,8 @@ def pre_model_prep(df: pd.DataFrame,
                    nan_flag_cols=("entropy_out_amt", "entropy_in_amt", "HHI_out", "HHI_in",
                                   "unique_receivers", "unique_senders"),
                    impute_zero_if=("entropy", "HHI"),
-                   log1p_cols=("total_out_amt", "total_in_amt", "avg_out_amt", "avg_in_amt",
-                               "max_out_amt", "max_in_amt", "min_out_amt", "min_in_amt",
+                   log1p_cols=("total_out_amt", "total_in_amt",
+                               "max_out_amt", "max_in_amt",
                                "net_flow_amt", "Amount Paid", "Amount Received")):
     """
     Minimal pre-model prep:
@@ -93,7 +88,7 @@ def pre_model_prep(df: pd.DataFrame,
     ]
     X = d[num_cols].copy()
 
-    # 2) missingness indicator flags
+    # 2) missingness indicator flags for structurally sparse features
     for c in nan_flag_cols:
         if c in X.columns:
             X[f"{c}_missing"] = X[c].isna().astype("uint8")
@@ -121,7 +116,8 @@ def pre_model_prep(df: pd.DataFrame,
 # 1) Row-level (transaction) features
 # ---------------------------
 def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
-    d = _ensure_columns(df, ["Timestamp", "From Bank", "To Bank", "Amount Paid", "Amount Received", "Payment Format"])
+    d = _ensure_columns(df, ["Timestamp", "From Bank", "To Bank",
+                             "Amount Paid", "Amount Received", "Payment Format"])
 
     # Safe casts
     d["From Bank"]      = d["From Bank"].astype(str)
@@ -130,11 +126,13 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
     amt_paid            = _to_num(d["Amount Paid"])
     amt_rec             = _to_num(d["Amount Received"])
 
-    # Features
-    d["Same_Bank"]      = (d["From Bank"] == d["To Bank"]).astype("Int8")
-    d["Amount_Diff"]    = amt_paid - amt_rec
-    d["Amount_Ratio"]   = np.where(amt_rec > 0, amt_paid / amt_rec, np.nan)
-    d["Is_Reinvestment"] = d["Payment Format"].astype(str).str.contains("reinvest", case=False, na=False).astype("Int8")
+    # Core tx-level features (compact but expressive)
+    d["Same_Bank"]       = (d["From Bank"] == d["To Bank"]).astype("Int8")
+    # Drop Amount_Diff (linear combo of Paid/Received)
+    d["Amount_Ratio"]    = np.where(amt_rec > 0, amt_paid / amt_rec, np.nan)
+    d["Is_Reinvestment"] = d["Payment Format"].astype(str).str.contains(
+        "reinvest", case=False, na=False
+    ).astype("Int8")
      
     # One-hot encoded feature for payment format
     cats = (
@@ -144,12 +142,11 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
         .str.lower()
         .replace({"nan": "unknown"})
     )
-    
     pf_dummies = pd.get_dummies(cats, prefix="PF", dtype="uint8")
     d = pd.concat([d, pf_dummies], axis=1)
     d = d.drop(columns=["Payment Format"])
 
-     # One-hot encoded feature for payment currency
+    # One-hot encoded feature for payment currency
     cats = (
         d["Payment Currency"]
         .astype(str)
@@ -157,19 +154,16 @@ def engineer_tx_features(df: pd.DataFrame) -> pd.DataFrame:
         .str.lower()
         .replace({"nan": "unknown"})
     )
-   
     pf_dummies = pd.get_dummies(cats, prefix="PC", dtype="uint8")
     d = pd.concat([d, pf_dummies], axis=1)
     d = d.drop(columns=["Payment Currency"])
 
-     #Rolling window entropy feature -> runnable but should be changed to acocunt-level
-    #d["amnt_paid_entropy_7"] = d["Amount Paid"].rolling(window=14).apply(shannon_entropy, raw=False)
+    # Rolling window entropy feature (kept commented, not used in compact set)
+    # d["amnt_paid_entropy_7"] = d["Amount Paid"].rolling(window=14).apply(shannon_entropy, raw=False)
 
-    #Weekday for transaction
+    # Weekday & hour of transaction
     d["weekday_of_transaction"] = d["Timestamp"].dt.day_of_week
-
-    #time of day for transaction
-    d["hour_of_transaction"] = d["Timestamp"].dt.hour
+    d["hour_of_transaction"]    = d["Timestamp"].dt.hour
 
     return d    
 
@@ -181,25 +175,20 @@ def compute_account_features(df: pd.DataFrame) -> pd.DataFrame:
     d["Account"]   = d["Account"].astype(str)
     d["Account.1"] = d["Account.1"].astype(str)
 
+    # Compact but informative outbound profile
     out = d.groupby("Account", dropna=False).agg(
         total_out_tx=("Account.1", "count"),
         total_out_amt=("Amount Paid", lambda x: _to_num(x).sum()),
-        avg_out_amt=("Amount Paid", lambda x: _to_num(x).mean()),
         max_out_amt=("Amount Paid", lambda x: _to_num(x).max()),
-        min_out_amt=("Amount Paid", lambda x: _to_num(x).min()),
-
-        # NEW: entropy of outbound amounts per sender account
+        # Entropy = diversification / unpredictability of outbound amounts
         entropy_out_amt=("Amount Paid", lambda x: shannon_entropy_binned(_to_num(x))),
     )
 
+    # Compact inbound profile
     inb = d.groupby("Account.1", dropna=False).agg(
         total_in_tx=("Account", "count"),
         total_in_amt=("Amount Received", lambda x: _to_num(x).sum()),
-        avg_in_amt=("Amount Received", lambda x: _to_num(x).mean()),
         max_in_amt=("Amount Received", lambda x: _to_num(x).max()),
-        min_in_amt=("Amount Received", lambda x: _to_num(x).min()),
-
-        # NEW: entropy of inbound amounts per receiver account
         entropy_in_amt=("Amount Received", lambda x: shannon_entropy_binned(_to_num(x))),
     )
     inb.index.name = "Account"
@@ -219,7 +208,9 @@ def compute_uniques_and_hhi(df: pd.DataFrame) -> pd.DataFrame:
 
     unique_receivers = d.groupby("Account", dropna=False)["Account.1"].nunique().rename("unique_receivers")
     unique_senders_r = d.groupby("Account.1", dropna=False)["Account"].nunique().rename("unique_senders")
-    unique_senders   = unique_senders_r.reset_index().rename(columns={"Account.1": "Account"}).set_index("Account")["unique_senders"]
+    unique_senders   = unique_senders_r.reset_index().rename(
+        columns={"Account.1": "Account"}
+    ).set_index("Account")["unique_senders"]
 
     pair_counts = d.groupby(["Account", "Account.1"], dropna=False).size().reset_index(name="tx_count")
 
@@ -233,7 +224,9 @@ def compute_uniques_and_hhi(df: pd.DataFrame) -> pd.DataFrame:
         .apply(lambda x: ((x / x.sum()) ** 2).sum() if x.sum() > 0 else np.nan)
         .rename("HHI_in")
     )
-    hhi_in = hhi_in_raw.reset_index().rename(columns={"Account.1": "Account"}).set_index("Account")["HHI_in"]
+    hhi_in = hhi_in_raw.reset_index().rename(
+        columns={"Account.1": "Account"}
+    ).set_index("Account")["HHI_in"]
 
     out = pd.concat([unique_receivers, unique_senders, hhi_out, hhi_in], axis=1).reset_index()
     return out
@@ -261,17 +254,17 @@ def attach_sender_receiver_features(tx: pd.DataFrame,
 # ===========================
 # MAIN
 # ===========================
-# Load (semicolon default; change `csv_sep` above if needed)
 start = time.time()
-df = read_csv_custom(filePath, nrows=1000000)
-df = df.sample(n=1000)
 
-# Safe numeric casts for amounts (keep original text columns too if you want)s
+df = read_csv_custom(filePath, nrows=100000)
+df = df.sample(n=10000)
+
+# Safe numeric casts for amounts
 for amount_col in ["Amount Paid", "Amount Received"]:
     if amount_col in df.columns:
         df[amount_col] = _to_num(df[amount_col])
 
-# Ensure ID-like columns are stringss
+# Ensure ID-like columns are strings
 for col in ["Account", "Account.1", "From Bank", "To Bank", "Payment Format"]:
     if col in df.columns:
         df[col] = df[col].astype(str)
@@ -279,58 +272,53 @@ for col in ["Account", "Account.1", "From Bank", "To Bank", "Payment Format"]:
 # 1) Tx-level features
 tx = engineer_tx_features(df)
 
-# 2) Account aggregates
+# 2) Account aggregates (with entropy)
 acc = compute_account_features(df)
 
 # 3) Uniques + HHI, merged into acc
 uniq_hhi = compute_uniques_and_hhi(df)
 acc = acc.merge(uniq_hhi, on="Account", how="left")
 
-# 4) Tx table with sender/receiver aggregates
+# 4) Tx table with sender/receiver aggregates (modeling base)
 tx_model = attach_sender_receiver_features(tx, acc, sender_suffix="_S", receiver_suffix="_R")
 
+# Normalize timestamp in tx_model for readability (optional; not used in pre-model)
+if "Timestamp" in tx_model.columns:
+    tx_model["Timestamp"] = pd.to_datetime(
+        tx_model["Timestamp"], errors="coerce"
+    ).dt.strftime("%Y-%m-%d %H:%M:%S")
+
 # ---------------------------
-# Pre-model matrices (for later codebases)
+# Pre-model matrices (for anomaly detection codebase)
 # ---------------------------
 X_acc, acc_feat_names, acc_scaler = pre_model_prep(acc)
 X_tx_model, tx_model_feat_names, tx_model_scaler = pre_model_prep(tx_model)
 
-# Normalize timestamp if present (string format for easy CSV use)
-if "Timestamp" in tx_model.columns:
-    tx_model["Timestamp"] = pd.to_datetime(tx_model["Timestamp"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
-
-# 5) Save outputs
+# 5) Save outputs (only modeling-relevant files)
 today = datetime.now().strftime("%Y-%m-%d")
 out_dir = Path(output_dir)
 
-# a) Row-level features only
-tx_out = _reorder_with_original_first(df, tx) if set(df.columns).issubset(tx.columns) else tx.copy()
-tx_out.to_csv(out_dir / f"tx_features_only_{today}.csv", sep=csv_sep, index=False)
+# a) Account-level feature table (compact, semantic)
+acc.to_csv(out_dir / f"account_features_{today}.csv", sep=csv_sep, index=False)
+
+# b) Tx-level + sender/receiver account features (semantic)
+tx_model.to_csv(out_dir / f"tx_model_with_sender_receiver_features_{today}.csv",
+                sep=csv_sep, index=False)
+
+# c) Pre-model matrices (scaled, numeric-only, ready for anomaly models)
+pd.DataFrame(X_acc, columns=acc_feat_names).to_csv(
+    out_dir / f"acc_pre_model_{today}.csv", sep=csv_sep, index=False
+)
+pd.DataFrame(X_tx_model, columns=tx_model_feat_names).to_csv(
+    out_dir / f"tx_model_pre_model_{today}.csv", sep=csv_sep, index=False
+)
 
 end = time.time()
 length = end - start
 print("Execution time:", length, "seconds!" )
 
-# b) Per-account aggregates (with uniques+HHI)
-acc.to_csv(out_dir / f"account_features_{today}.csv", sep=csv_sep, index=False)
-
-# c) Uniques + HHI standalone (optional but handy)
-uniq_hhi.to_csv(out_dir / f"account_uniques_hhi_{today}.csv", sep=csv_sep, index=False)
-
-# d) Full modeling table
-tx_model_out = _reorder_with_original_first(df, tx_model) if set(df.columns).issubset(tx_model.columns) else tx_model.copy()
-tx_model_out.to_csv(out_dir / f"tx_model_with_sender_receiver_features_{today}.csv", sep=csv_sep, index=False)
-
-# Save pre-model versions for modeling pipeline
-pd.DataFrame(X_acc, columns=acc_feat_names).to_csv(out_dir / f"acc_pre_model_{today}.csv", sep=csv_sep, index=False)
-pd.DataFrame(X_tx_model, columns=tx_model_feat_names).to_csv(out_dir / f"tx_model_pre_model_{today}.csv", sep=csv_sep, index=False)
-
-
-print("\n✅ Feature export completed. Files saved to:")
-print(f"- {out_dir / f'tx_features_only_{today}.csv'}")
+print("\n✅ Export completed. Files saved to:")
 print(f"- {out_dir / f'account_features_{today}.csv'}")
-print(f"- {out_dir / f'account_uniques_hhi_{today}.csv'}")
 print(f"- {out_dir / f'tx_model_with_sender_receiver_features_{today}.csv'}")
 print(f"- {out_dir / f'acc_pre_model_{today}.csv'}")
 print(f"- {out_dir / f'tx_model_pre_model_{today}.csv'}")
-
