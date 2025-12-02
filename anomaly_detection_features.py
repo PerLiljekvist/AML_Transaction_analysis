@@ -193,7 +193,9 @@ def compute_account_features(df: pd.DataFrame) -> pd.DataFrame:
     )
     inb.index.name = "Account"
 
-    acc = out.join(inb, how="outer").reset_index()
+    acc = out.merge(inb, left_on='Account', right_on='Account')
+
+    #acc = out.join(inb, how="outer").reset_index()
     acc["net_flow_amt"] = (acc["total_out_amt"].fillna(0) - acc["total_in_amt"].fillna(0))
     return acc
 
@@ -256,8 +258,8 @@ def attach_sender_receiver_features(tx: pd.DataFrame,
 # ===========================
 start = time.time()
 
-df = read_csv_custom(filePath, nrows=100000)
-df = df.sample(n=10000)
+df = read_csv_custom(filePath, nrows=10000)
+df = df.sample(n=1000)
 
 # Safe numeric casts for amounts
 for amount_col in ["Amount Paid", "Amount Received"]:
