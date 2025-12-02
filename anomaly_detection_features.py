@@ -193,9 +193,8 @@ def compute_account_features(df: pd.DataFrame) -> pd.DataFrame:
     )
     inb.index.name = "Account"
 
-    acc = out.merge(inb, left_on='Account', right_on='Account')
+    acc = out.merge(inb, left_on='Account', right_on='Account').reset_index()
 
-    #acc = out.join(inb, how="outer").reset_index()
     acc["net_flow_amt"] = (acc["total_out_amt"].fillna(0) - acc["total_in_amt"].fillna(0))
     return acc
 
