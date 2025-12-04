@@ -27,12 +27,13 @@ def _to_num(s):
 def shannon_entropy_binned(x, bins=10):
     """
     Shannon entropy for numeric series using binning (robust for floats/heavy tails).
-    Returns NaN if too few values.
+    Returns 0.0 if too few values (no uncertainty / no diversification).
     """
     s = pd.Series(x)
     s = pd.to_numeric(s, errors="coerce").dropna()
     if len(s) < 2:
-        return np.nan
+        # Previously np.nan -> now 0.0 to avoid NaNs downstream
+        return 0.0
 
     # Use quantile bins to handle heavy-tailed AML amounts
     try:
@@ -233,12 +234,12 @@ def compute_uniques_and_hhi(df: pd.DataFrame) -> pd.DataFrame:
 
     hhi_out = (
         pair_counts.groupby("Account")["tx_count"]
-        .apply(lambda x: ((x / x.sum()) ** 2).sum() if x.sum() > 0 else np.nan)
+        .apply(lambda x: ((x / x.sum()) ** 2).sum() if x.sum() > 0 else 0.0)
         .rename("HHI_out")
     )
     hhi_in_raw = (
         pair_counts.groupby("Account.1")["tx_count"]
-        .apply(lambda x: ((x / x.sum()) ** 2).sum() if x.sum() > 0 else np.nan)
+        .apply(lambda x: ((x / x.sum()) ** 2).sum() if x.sum() > 0 else 0.0)
         .rename("HHI_in")
     )
     hhi_in = hhi_in_raw.reset_index().rename(
@@ -246,6 +247,12 @@ def compute_uniques_and_hhi(df: pd.DataFrame) -> pd.DataFrame:
     ).set_index("Account")["HHI_in"]
 
     out = pd.concat([unique_receivers, unique_senders, hhi_out, hhi_in], axis=1).reset_index()
+
+    # Ensure no NaNs left in these numeric HHI / unique columns
+    for c in ["unique_receivers", "unique_senders", "HHI_out", "HHI_in"]:
+        if c in out.columns:
+            out[c] = out[c].fillna(0)
+
     return out
 
 # ---------------------------
@@ -273,8 +280,8 @@ def attach_sender_receiver_features(tx: pd.DataFrame,
 # ===========================
 start = time.time()
 
-df = read_csv_custom(filePath, nrows=100000)
-#df = df.sample(n=1000)
+df = read_csv_custom(filePath, nrows=10000)
+df = df.sample(n=1000)
 
 # Safe numeric casts for amounts
 for amount_col in ["Amount Paid", "Amount Received"]:
@@ -295,6 +302,11 @@ acc = compute_account_features(df)
 # 3) Uniques + HHI, merged into acc
 uniq_hhi = compute_uniques_and_hhi(df)
 acc = acc.merge(uniq_hhi, on="Account", how="left")
+
+# 3b) Clean numeric columns in acc and tx (no NaN / inf in saved CSVs)
+for _df in (acc, tx):
+    num_cols = _df.select_dtypes(include=[np.number]).columns
+    _df[num_cols] = _df[num_cols].replace([np.inf, -np.inf], np.nan).fillna(0)
 
 # 4) Tx table with sender/receiver aggregates (modeling base)
 tx_model = attach_sender_receiver_features(tx, acc, sender_suffix="_S", receiver_suffix="_R")
