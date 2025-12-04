@@ -67,7 +67,8 @@ def pre_model_prep(df: pd.DataFrame,
     Minimal pre-model prep:
     - selects numeric features
     - adds NaN-missingness flags for key sparse features
-    - imputes NaNs (0 for entropy/HHI; median otherwise)
+    - imputes NaNs (0 for entropy/HHI; median otherwise, fallback 0 if median is NaN)
+    - replaces any ±inf
     - log1p on heavy-tailed amount columns if present
     - robust scales everything (good for power-law / heavy tails)
 
@@ -91,21 +92,41 @@ def pre_model_prep(df: pd.DataFrame,
     # 3) log1p on heavy-tailed amount-ish columns (only if exists)
     for c in log1p_cols:
         if c in X.columns:
-            X[c] = np.log1p(X[c].clip(lower=0))
+            # ensure no negative values before log, and guard against inf
+            vals = X[c].copy()
+            vals = vals.replace([np.inf, -np.inf], np.nan)
+            vals = vals.clip(lower=0)
+            X[c] = np.log1p(vals)
 
-    # 4) impute NaNs
+    # 4) handle NaNs and ±inf column by column
     for c in X.columns:
-        if X[c].isna().any():
-            if any(key in c for key in impute_zero_if):
-                X[c] = X[c].fillna(0)
-            else:
-                X[c] = X[c].fillna(X[c].median())
+        col = X[c]
 
-    # 5) robust scaling
+        # replace infinities with NaN first
+        col = col.replace([np.inf, -np.inf], np.nan)
+
+        if col.isna().any():
+            if any(key in c for key in impute_zero_if):
+                # entropy / HHI-type: use 0 as natural "no information" baseline
+                col = col.fillna(0)
+            else:
+                med = col.median()
+                # if median itself is NaN (e.g. column entirely NaN), fallback to 0
+                if pd.isna(med):
+                    med = 0
+                col = col.fillna(med)
+
+        X[c] = col
+
+    # 5) final safety pass: no NaNs or inf left
+    X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+    # 6) robust scaling
     scaler = RobustScaler()
     X_scaled = scaler.fit_transform(X)
 
     return X_scaled, list(X.columns), scaler
+
 
 # ---------------------------
 # 1) Row-level (transaction) features
