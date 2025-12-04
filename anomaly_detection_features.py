@@ -24,11 +24,6 @@ output_dir = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
 def _to_num(s): 
     return pd.to_numeric(s, errors="coerce")
 
-def shannon_entropy(x):
-    counts = np.bincount(pd.Series(x).astype(int))  # count occurrences
-    probs = counts[counts > 0] / counts.sum()       # probabilities
-    return entropy(probs, base=2)   
-
 def shannon_entropy_binned(x, bins=10):
     """
     Shannon entropy for numeric series using binning (robust for floats/heavy tails).
@@ -257,8 +252,8 @@ def attach_sender_receiver_features(tx: pd.DataFrame,
 # ===========================
 start = time.time()
 
-df = read_csv_custom(filePath, nrows=10000)
-df = df.sample(n=1000)
+df = read_csv_custom(filePath, nrows=100000)
+#df = df.sample(n=1000)
 
 # Safe numeric casts for amounts
 for amount_col in ["Amount Paid", "Amount Received"]:
