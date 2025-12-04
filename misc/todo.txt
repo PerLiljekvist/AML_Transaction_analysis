@@ -1,11 +1,19 @@
 BACKLOG-ISH
 
-
+Create new clean pyod based code for anomaly detection using pyod based on pre-processed and feature engineered input
 Add k-step depth to k-core/egonetwork. Will require broader filetering. Filtering on specific account cant be done during load.  
 Add preview networkx based visualisation in coded creating egonet file. 
 
 DONE!
 
+✅ Add pre-moddeling block to handle NaN:s for example 
+✅ Clean upp "old" transaction-level entropy code
+✅ Fix feature creation recommendation based on recommendations (see https://chatgpt.com/c/692a0373-9324-8332-87a5-980adba54cfc)
+✅ Change entropy to account level (first )
+✅ Add weekday as feature on transaction level
+✅ Add entropy as features on transaction level for "Ammount Paid" -> Trackning of entropy over time over rolling window
+✅ Add sampling capability before adding features
+✅ Add timer for performance tracking in main 
 ✅ Include is laundering flag i data before adde to model 
 ✅ Make feature engineered file available for use with DBSCAN code. 
 ✅ Tidy up DBSCAN code to be more self contained (remove unecessary dependencies)
