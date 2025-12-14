@@ -10,6 +10,7 @@ from paths_and_stuff import *
 from scipy.stats import entropy
 import time 
 from sklearn.preprocessing import RobustScaler
+from typing import List
 
 # ---------------------------
 # Config (change these two)
@@ -52,6 +53,93 @@ def _ensure_columns(df: pd.DataFrame, cols):
         if c not in d.columns:
             d[c] = np.nan
     return d
+
+def write_readme(out_dir: Path, today: str):
+    text = f"""
+AML Feature Engineering Output – {today}
+======================================
+
+This folder contains feature-engineered datasets for anomaly detection
+in an AML / financial crime context.
+
+FILES
+-----
+
+1) account_features_{today}.csv
+   - Human-readable, semantic account-level features
+   - Includes totals, max amounts, entropy, HHI, net flow, etc.
+   - Contains NaNs and unscaled values
+   - Intended for analysis, reporting, investigation, dashboards
+
+2) tx_model_with_sender_receiver_features_{today}.csv
+   - Transaction-level table enriched with sender (_S) and receiver (_R) account features
+   - Intended for interpretation, case work, network analysis, Gephi, etc.
+   - NOT model-ready
+
+3) acc_pre_model_{today}.csv
+   - Numeric-only, scaled, imputed account-level feature matrix
+   - NaNs handled, heavy tails log-scaled, robustly scaled
+   - Direct input for anomaly detection models (DBSCAN, LOF, IsolationForest)
+
+4) tx_model_pre_model_{today}.csv
+   - Numeric-only, scaled, imputed transaction-level + account-context matrix
+   - Direct input for transaction-level anomaly detection models
+
+GENERAL NOTES
+-------------
+- Semantic files are preserved for interpretability
+- Pre-model files are compact, machine-oriented, and model-ready
+- Missingness indicator columns (_missing) encode structural sparsity
+- No labels or targets are included (unsupervised setup)
+
+"""
+    (out_dir / "README.txt").write_text(text.strip(), encoding="utf-8")
+
+def write_data_dictionary(out_dir: Path, acc_cols, tx_model_cols, today: str):
+
+    rows = []
+
+    def describe(col):
+        if col.endswith("_missing"):
+            return "Missingness indicator (1 = original value was NaN)"
+        if "entropy" in col:
+            return "Shannon entropy (diversity / unpredictability measure)"
+        if "HHI" in col:
+            return "Herfindahl-Hirschman Index (concentration measure)"
+        if "total_" in col:
+            return "Total volume or count over observation window"
+        if "max_" in col:
+            return "Maximum observed value"
+        if "net_flow" in col:
+            return "Outbound minus inbound amount"
+        if col.startswith("PF_"):
+            return "Payment format indicator (one-hot encoded)"
+        if col.startswith("PC_"):
+            return "Payment currency indicator (one-hot encoded)"
+        if col.endswith("_S"):
+            return "Sender account feature"
+        if col.endswith("_R"):
+            return "Receiver account feature"
+        return "Numeric feature used for anomaly detection"
+
+    for c in acc_cols:
+        rows.append({
+            "feature_name": c,
+            "level": "account",
+            "source": "account aggregation",
+            "description": describe(c)
+        })
+
+    for c in tx_model_cols:
+        rows.append({
+            "feature_name": c,
+            "level": "transaction",
+            "source": "tx / sender / receiver",
+            "description": describe(c)
+        })
+
+    dd = pd.DataFrame(rows).sort_values(["level", "feature_name"])
+    dd.to_csv(out_dir / f"data_dictionary_{today}.csv", index=False)
 
 # ---------------------------
 # PRE-MODEL PREP (lean, reusable)
@@ -127,7 +215,6 @@ def pre_model_prep(df: pd.DataFrame,
     X_scaled = scaler.fit_transform(X)
 
     return X_scaled, list(X.columns), scaler
-
 
 # ---------------------------
 # 1) Row-level (transaction) features
@@ -342,12 +429,21 @@ pd.DataFrame(X_tx_model, columns=tx_model_feat_names).to_csv(
     out_dir / f"tx_model_pre_model_{today}.csv", sep=csv_sep, index=False
 )
 
-end = time.time()
-length = end - start
-print("Execution time:", length, "seconds!" )
-
 print("\n✅ Export completed. Files saved to:")
 print(f"- {out_dir / f'account_features_{today}.csv'}")
 print(f"- {out_dir / f'tx_model_with_sender_receiver_features_{today}.csv'}")
 print(f"- {out_dir / f'acc_pre_model_{today}.csv'}")
 print(f"- {out_dir / f'tx_model_pre_model_{today}.csv'}")
+
+write_readme(out_dir, today)
+
+write_data_dictionary(
+    out_dir,
+    acc_feat_names,
+    tx_model_feat_names,
+    today
+)
+
+end = time.time()
+length = end - start
+print("Execution time:", length, "seconds!" )
