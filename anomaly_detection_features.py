@@ -393,7 +393,7 @@ acc = acc.merge(uniq_hhi, on="Account", how="left")
 # 3b) Clean numeric columns in acc and tx (no NaN / inf in saved CSVs)
 for _df in (acc, tx):
     num_cols = _df.select_dtypes(include=[np.number]).columns
-    _df[num_cols] = _df[num_cols].replace([np.inf, -np.inf], np.nan).fillna(0)
+    _df[num_cols] = _df[num_cols].replace([np.inf, -np.inf], np.nan).fillna(0) # type: ignore
 
 # 4) Tx table with sender/receiver aggregates (modeling base)
 tx_model = attach_sender_receiver_features(tx, acc, sender_suffix="_S", receiver_suffix="_R")
@@ -426,14 +426,14 @@ pd.DataFrame(X_acc, columns=acc_feat_names).to_csv(
     out_dir / f"acc_pre_model_{today}.csv", sep=csv_sep, index=False
 )
 pd.DataFrame(X_tx_model, columns=tx_model_feat_names).to_csv(
-    out_dir / f"tx_model_pre_model_{today}.csv", sep=csv_sep, index=False
+    out_dir / f"tx_model_with_account_context_pre_model_{today}.csv", sep=csv_sep, index=False
 )
 
 print("\n✅ Export completed. Files saved to:")
 print(f"- {out_dir / f'account_features_{today}.csv'}")
 print(f"- {out_dir / f'tx_model_with_sender_receiver_features_{today}.csv'}")
 print(f"- {out_dir / f'acc_pre_model_{today}.csv'}")
-print(f"- {out_dir / f'tx_model_pre_model_{today}.csv'}")
+print(f"- {out_dir / f'tx_model_with_account_context_pre_model_{today}.csv'}")
 
 write_readme(out_dir, today)
 
