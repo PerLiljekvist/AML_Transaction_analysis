@@ -23,7 +23,7 @@ from paths_and_stuff import *
 # Config
 # ===========================
 PATH = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
-INPUT_FILE  = "/Users/perliljekvist/Documents/Python/IBM_AML/Data/2025-12-04/tx_model_with_sender_receiver_features_2025-12-04.csv"       # <- change me
+INPUT_FILE  = "/Users/perliljekvist/Documents/Python/IBM_AML/Data/2025-12-20/tx_pre_model_with_account_context_pre_model_2025-12-20.csv"       # <- change me
 OUTPUT_FILE =  PATH + "/tx_with_pyod_anomalies.csv"       # full output
 TOP_FILE    = PATH + "/top_consensus_anomalies.csv"      # only top consensus anomalies
 
@@ -208,20 +208,46 @@ def main():
     print(f"\nSaving full output with anomaly columns to: {OUTPUT_FILE}")
     df_out.to_csv(OUTPUT_FILE, sep=CSV_SEP, index=False)
 
-    # 6) Save a small file with the "top" consensus anomalies
+      # 6) Save a small file with the "top" consensus anomalies
     top_consensus = df_out[df_out["consensus_anomaly"]].copy()
-    # Simple ordering: most votes first, then by average score
+
     if not top_consensus.empty:
+        # ---- laundering sanity check ----
+        if "Is Laundering" in top_consensus.columns:
+            n_cons = len(top_consensus)
+            n_laundry = int((top_consensus["Is Laundering"] == 1).sum())
+            laundry_rate = n_laundry / n_cons
+
+            print("\n=== Consensus anomalies vs laundering label ===")
+            print(f"Consensus anomalies        : {n_cons}")
+            print(f"Labeled laundering (Is=1)  : {n_laundry}")
+            print(f"Laundering share           : {laundry_rate:.2%}")
+
+            # Add explicit boolean flag for clarity in output file
+            top_consensus["is_laundry_flag"] = (
+                top_consensus["Is Laundering"] == 1
+            )
+        else:
+            print("\nWARNING: 'Is Laundering' column not found.")
+            top_consensus["is_laundry_flag"] = False
+
+        # ---- ranking ----
         top_consensus["avg_score"] = (
-            top_consensus[["iforest_score", "lof_score", "copod_score"]].mean(axis=1)
+            top_consensus[["iforest_score", "lof_score", "copod_score"]]
+            .mean(axis=1)
         )
+
         top_consensus = top_consensus.sort_values(
-            ["anomaly_votes", "avg_score"], ascending=[False, False]
+            ["anomaly_votes", "avg_score"],
+            ascending=[False, False],
         )
+
         print(f"Saving top consensus anomalies to: {TOP_FILE}")
         top_consensus.to_csv(TOP_FILE, sep=CSV_SEP, index=False)
+
     else:
         print("No consensus anomalies (>=2 algos) found; not writing top file.")
+
 
 
 if __name__ == "__main__":
