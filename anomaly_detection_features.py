@@ -418,7 +418,7 @@ out_dir = Path(output_dir)
 acc.to_csv(out_dir / f"account_features_{today}.csv", sep=csv_sep, index=False)
 
 # b) Tx-level + sender/receiver account features (semantic)
-tx_model.to_csv(out_dir / f"tx_model_with_sender_receiver_features_{today}.csv",
+tx_model.to_csv(out_dir / f"tx_with_sender_receiver_features_{today}.csv",
                 sep=csv_sep, index=False)
 
 # c) Pre-model matrices (scaled, numeric-only, ready for anomaly models)
@@ -426,14 +426,14 @@ pd.DataFrame(X_acc, columns=acc_feat_names).to_csv(
     out_dir / f"acc_pre_model_{today}.csv", sep=csv_sep, index=False
 )
 pd.DataFrame(X_tx_model, columns=tx_model_feat_names).to_csv(
-    out_dir / f"tx_model_with_account_context_pre_model_{today}.csv", sep=csv_sep, index=False
+    out_dir / f"tx_pre_model_with_account_context_pre_model_{today}.csv", sep=csv_sep, index=False
 )
 
 print("\n✅ Export completed. Files saved to:")
 print(f"- {out_dir / f'account_features_{today}.csv'}")
-print(f"- {out_dir / f'tx_model_with_sender_receiver_features_{today}.csv'}")
+print(f"- {out_dir / f'tx_with_sender_receiver_features_{today}.csv'}")
 print(f"- {out_dir / f'acc_pre_model_{today}.csv'}")
-print(f"- {out_dir / f'tx_model_with_account_context_pre_model_{today}.csv'}")
+print(f"- {out_dir / f'tx_pre_model_with_account_context_pre_model_{today}.csv'}")
 
 write_readme(out_dir, today)
 
