@@ -1,12 +1,18 @@
 BACKLOG-ISH
-
-Create new clean pyod based code for anomaly detection using pyod based on pre-processed and feature engineered input
+ 
+Add better reporting to pyod anomaly detection (algo votes in relation to is laundery flag) 
+Add generic EDA to be used project agnostiacally so to speak (Include, distributions, missing values, outliers. multicoliniarity)
+add exec time to pyod file
+create output file for sanity check, now it´s only written out in terminal window. 
 Add k-step depth to k-core/egonetwork. Will require broader filetering. Filtering on specific account cant be done during load.  
 Add preview networkx based visualisation in coded creating egonet file. 
 
 DONE!
 
-✅ Add pre-moddeling block to handle NaN:s for example 
+✅ Make sure features in the pre-model output are being in used in anomaly code as the current feature set i based on earlier version of output
+✅ Add is laundering flag in report output to compare outliers with actual money laundering cases
+✅ Add pre-moddeling block to handle NaN:s for example (fix error: Input contains NaN, infinity or a value too large for dtype('float64').) Create new clean pyod based code for anomaly detection using pyod based on pre-processed and feature engineered input
+✅ Add pre-moddeling block to handle NaN:s for example (fix error: Input contains NaN, infinity or a value too large for dtype('float64').) 
 ✅ Clean upp "old" transaction-level entropy code
 ✅ Fix feature creation recommendation based on recommendations (see https://chatgpt.com/c/692a0373-9324-8332-87a5-980adba54cfc)
 ✅ Change entropy to account level (first )
