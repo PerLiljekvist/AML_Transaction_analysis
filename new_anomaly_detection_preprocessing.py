@@ -67,33 +67,53 @@ def pre_model_prep(
 ):
     d = df.copy()
 
+    # numeric columns excluding ID-like
     num_cols = [
         c for c in d.columns
         if c not in id_like and pd.api.types.is_numeric_dtype(d[c])
     ]
     X = d[num_cols].copy()
 
+    # missingness flags (only for selected columns if present)
     for c in nan_flag_cols:
         if c in X.columns:
             X[f"{c}_missing"] = X[c].isna().astype("uint8")
 
+    # log transforms
     for c in log1p_cols:
         if c in X.columns:
-            vals = X[c].replace([np.inf, -np.inf], np.nan).clip(lower=0)
-            X[c] = np.log1p(vals)
+            vals = X[c].replace([np.inf, -np.inf], np.nan)
 
+            # net_flow can be negative: use signed log1p to preserve direction
+            if c == "net_flow_amt":
+                v = vals.fillna(0)
+                X[c] = np.sign(v) * np.log1p(np.abs(v))
+            else:
+                # amounts should be non-negative: clip below 0
+                X[c] = np.log1p(vals.clip(lower=0))
+
+    # impute per-column
     for c in X.columns:
         col = X[c].replace([np.inf, -np.inf], np.nan)
         if col.isna().any():
             if any(k in c for k in impute_zero_if):
                 col = col.fillna(0)
             else:
-                col = col.fillna(col.median() if not pd.isna(col.median()) else 0)
+                med = col.median()
+                col = col.fillna(med if not pd.isna(med) else 0)
         X[c] = col
 
-    X = X.fillna(0)
+    # final safety
+    X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+    # drop constant columns (helps distance-based methods / avoids wasted dimensions)
+    nunq = X.nunique(dropna=False)
+    const_cols = nunq[nunq <= 1].index.tolist()
+    if const_cols:
+        X = X.drop(columns=const_cols)
 
     scaler = RobustScaler()
     X_scaled = scaler.fit_transform(X)
 
     return X_scaled, list(X.columns), scaler
+
