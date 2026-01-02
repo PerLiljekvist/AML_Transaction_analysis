@@ -5,6 +5,7 @@ and produce:
   - per-transaction anomaly columns (scores + flags + consensus)
   - a simple text report
   - CSV files with the full output and top consensus anomalies
+  - NEW: aggregated CSV report comparing algorithms + laundering label
 """
 
 import pandas as pd
@@ -17,7 +18,7 @@ from pyod.models.copod import COPOD
 import datetime as dt
 from helpers import *
 from paths_and_stuff import *
-import time 
+import time
 
 
 # ===========================
@@ -26,7 +27,10 @@ import time
 PATH = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
 INPUT_FILE  = INPUT_FILE =  "/Users/perliljekvist/Documents/Python/IBM_AML/Data/2026-01-02/tx_with_sender_receiver_features_2026-01-02.csv" # <- change me
 OUTPUT_FILE =  PATH + "/tx_with_pyod_anomalies.csv"       # full output
-TOP_FILE    = PATH + "/top_consensus_anomalies.csv"      # only top consensus anomalies
+TOP_FILE    = PATH + "/top_consensus_anomalies.csv"       # only top consensus anomalies
+
+# NEW: aggregated report
+AGG_REPORT_FILE = PATH + "/anomaly_aggregate_report.csv"
 
 CSV_SEP     = ";"                                # your sample uses semicolon
 CONTAM      = 0.01                               # expected outlier share
@@ -179,16 +183,75 @@ def run_pyod_ensemble(
 
 
 # ===========================
+# NEW: Aggregated CSV report
+# ===========================
+def build_agg_report(df_out: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aggregated report comparing:
+      - anomalies per algorithm
+      - laundering count/rate among those anomalies (if Is Laundering exists)
+      - vote-based breakdown (votes=2, votes=3, consensus>=2)
+
+    Returns a DataFrame suitable for CSV export.
+    """
+    d = df_out.copy()
+    n_total = len(d)
+
+    # robust laundering flag (handles strings "1", floats, etc.)
+    has_laundry = "Is Laundering" in d.columns
+    if has_laundry:
+        is_laundry = pd.to_numeric(d["Is Laundering"], errors="coerce").fillna(0).astype(int).eq(1)
+    else:
+        is_laundry = pd.Series(False, index=d.index)
+
+    def _row(name: str, mask: pd.Series) -> dict:
+        n_flag = int(mask.sum())
+        n_lau = int((mask & is_laundry).sum()) if has_laundry else np.nan
+        rate_lau = (n_lau / n_flag) if (has_laundry and n_flag > 0) else (0.0 if has_laundry else np.nan)
+        return {
+            "group": name,
+            "n_flagged": n_flag,
+            "share_of_data": (n_flag / n_total) if n_total > 0 else np.nan,
+            "n_laundering": n_lau,
+            "laundering_share_among_flagged": rate_lau,
+        }
+
+    rows = []
+    rows.append(_row("IForest anomalies", d["iforest_is_outlier"].astype(bool)))
+    rows.append(_row("LOF anomalies", d["lof_is_outlier"].astype(bool)))
+    rows.append(_row("COPOD anomalies", d["copod_is_outlier"].astype(bool)))
+
+    # vote buckets + consensus
+    rows.append(_row("Votes = 2 (exactly)", d["anomaly_votes"].eq(2)))
+    rows.append(_row("Votes = 3 (exactly)", d["anomaly_votes"].eq(3)))
+    rows.append(_row("Consensus (>=2)", d["consensus_anomaly"].astype(bool)))
+
+    # (optional but handy) overall labeled laundering prevalence
+    if has_laundry:
+        rows.append({
+            "group": "All transactions (label prevalence)",
+            "n_flagged": n_total,
+            "share_of_data": 1.0,
+            "n_laundering": int(is_laundry.sum()),
+            "laundering_share_among_flagged": float(is_laundry.mean()) if n_total > 0 else np.nan,
+        })
+
+    rep = pd.DataFrame(rows)
+
+    # make it human-friendly in CSV (percent columns as decimals is fine; keep numeric)
+    return rep
+
+
+# ===========================
 # Main script
 # ===========================
 def main():
-    
+
     # 1) Load preprocessed + (ideally) scaled data
     print(f"Reading input data from: {INPUT_FILE}")
     df = pd.read_csv(INPUT_FILE, sep=CSV_SEP)
 
     # 2) Optional: explicitly list feature columns
-    # If you trust your preprocessing, you can leave feature_cols=None
     feature_cols = None
 
     # 3) Run ensemble
@@ -210,16 +273,21 @@ def main():
     print(f"\nSaving full output with anomaly columns to: {OUTPUT_FILE}")
     df_out.to_csv(OUTPUT_FILE, sep=CSV_SEP, index=False)
 
-      # 6) Save a small file with the "top" consensus anomalies
+    # 5b) NEW: Save aggregated CSV report
+    agg_report = build_agg_report(df_out)
+    print(f"\nSaving aggregated anomaly/laundering report to: {AGG_REPORT_FILE}")
+    agg_report.to_csv(AGG_REPORT_FILE, sep=CSV_SEP, index=False)
+
+    # 6) Save a small file with the "top" consensus anomalies
     top_consensus = df_out[df_out["consensus_anomaly"]].copy()
-    
 
     if not top_consensus.empty:
         # ---- laundering sanity check ----
         if "Is Laundering" in top_consensus.columns:
             n_cons = len(top_consensus)
-            n_laundry = int((top_consensus["Is Laundering"] == 1).sum())
-            laundry_rate = n_laundry / n_cons
+            is_laundry = pd.to_numeric(top_consensus["Is Laundering"], errors="coerce").fillna(0).astype(int).eq(1)
+            n_laundry = int(is_laundry.sum())
+            laundry_rate = n_laundry / n_cons if n_cons > 0 else 0.0
 
             print("\n=== Consensus anomalies vs laundering label ===")
             print(f"Consensus anomalies        : {n_cons}")
@@ -227,9 +295,7 @@ def main():
             print(f"Laundering share           : {laundry_rate:.2%}")
 
             # Add explicit boolean flag for clarity in output file
-            top_consensus["is_laundry_flag"] = (
-                top_consensus["Is Laundering"] == 1
-            )
+            top_consensus["is_laundry_flag"] = is_laundry
         else:
             print("\nWARNING: 'Is Laundering' column not found.")
             top_consensus["is_laundry_flag"] = False
@@ -254,5 +320,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
