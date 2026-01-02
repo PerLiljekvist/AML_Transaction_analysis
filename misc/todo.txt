@@ -1,5 +1,7 @@
 BACKLOG-ISH
  
+
+Add support for toggling of pre-proc -> https://chatgpt.com/share/6953cf7a-fce4-8012-af3e-2bb98e51362f
 Add better reporting to pyod anomaly detection (algo votes in relation to is laundery flag) 
 Add generic EDA to be used project agnostiacally so to speak (Include, distributions, missing values, outliers. multicoliniarity)
 add exec time to pyod file
@@ -9,6 +11,8 @@ Add preview networkx based visualisation in coded creating egonet file.
 
 DONE!
 
+✅ Fix problem with missing Is Laundering FlaG
+✅ Separation of concerns (pre-proc, feature_creation, model-run) -> https://chatgpt.com/share/6953c756-3ea4-8012-ac9b-cfd851309e70
 ✅ Make sure features in the pre-model output are being in used in anomaly code as the current feature set i based on earlier version of output
 ✅ Add is laundering flag in report output to compare outliers with actual money laundering cases
 ✅ Add pre-moddeling block to handle NaN:s for example (fix error: Input contains NaN, infinity or a value too large for dtype('float64').) Create new clean pyod based code for anomaly detection using pyod based on pre-processed and feature engineered input

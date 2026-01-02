@@ -17,13 +17,14 @@ from pyod.models.copod import COPOD
 import datetime as dt
 from helpers import *
 from paths_and_stuff import *
+import time 
 
 
 # ===========================
 # Config
 # ===========================
 PATH = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
-INPUT_FILE  = "/Users/perliljekvist/Documents/Python/IBM_AML/Data/2025-12-20/tx_pre_model_with_account_context_pre_model_2025-12-20.csv"       # <- change me
+INPUT_FILE  = INPUT_FILE =  "/Users/perliljekvist/Documents/Python/IBM_AML/Data/2026-01-02/tx_with_sender_receiver_features_2026-01-02.csv" # <- change me
 OUTPUT_FILE =  PATH + "/tx_with_pyod_anomalies.csv"       # full output
 TOP_FILE    = PATH + "/top_consensus_anomalies.csv"      # only top consensus anomalies
 
@@ -76,7 +77,7 @@ def run_pyod_ensemble(
             "To Bank",
             "Account.1",
             "Receiving Currency",
-            "Is Laundering",  # label; don't use when fitting unsupervised models
+            #"Is Laundering",  # label; don't use when fitting unsupervised models
         }
         feature_cols = [c for c in d.columns if c not in non_features]
 
@@ -181,6 +182,7 @@ def run_pyod_ensemble(
 # Main script
 # ===========================
 def main():
+    
     # 1) Load preprocessed + (ideally) scaled data
     print(f"Reading input data from: {INPUT_FILE}")
     df = pd.read_csv(INPUT_FILE, sep=CSV_SEP)
@@ -210,6 +212,7 @@ def main():
 
       # 6) Save a small file with the "top" consensus anomalies
     top_consensus = df_out[df_out["consensus_anomaly"]].copy()
+    
 
     if not top_consensus.empty:
         # ---- laundering sanity check ----
@@ -249,6 +252,7 @@ def main():
         print("No consensus anomalies (>=2 algos) found; not writing top file.")
 
 
-
 if __name__ == "__main__":
     main()
+
+

@@ -731,4 +731,4 @@ if __name__ == "__main__":
             compute_vif=False,
         )
 
-        run_eda(df, out_dir="eda_output", cfg=cfg)
+        run_eda(df, out_dir="Data/eda_output", cfg=cfg)
