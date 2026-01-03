@@ -34,6 +34,8 @@ import matplotlib.pyplot as plt
 from helpers import *
 from paths_and_stuff import * 
 
+today = datetime.now().strftime("%Y-%m-%d")
+output_dir = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
 
 # =============================================================================
 # CONFIG
@@ -720,7 +722,7 @@ if __name__ == "__main__":
         cfg = EDAConfig(
             # toggles
             exclude=None,                 # e.g. ["distributions"]
-            only=["outliers"],                    # e.g. ["missingness", "multicollinearity"]
+            only=["outliers", "missingness"],                    # e.g. ["missingness", "multicollinearity"]
 
             # performance/plots
             sample_n_rows=200_000,
@@ -731,4 +733,4 @@ if __name__ == "__main__":
             compute_vif=False,
         )
 
-        run_eda(df, out_dir="Data/eda_output", cfg=cfg)
+        run_eda(df, out_dir="Data/" + today + "/eda_output", cfg=cfg)

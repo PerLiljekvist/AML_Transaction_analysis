@@ -27,12 +27,12 @@ import time
 # ===========================
 start = time.time()
 PATH = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
-INPUT_FILE  = INPUT_FILE =  "/Users/perliljekvist/Documents/Python/IBM_AML/Data/2026-01-03/tx_with_sender_receiver_features_2026-01-03.csv" # <- change me
+INPUT_FILE  = PATH + "/tx_with_sender_receiver_features.csv" # <- change me
 OUTPUT_FILE =  PATH + "/tx_with_pyod_anomalies.csv"       # full output
-TOP_FILE    = PATH + "/top_consensus_anomalies.csv"       # only top consensus anomalies
+TOP_FILE    = PATH + "/report_top_consensus_anomalies.csv"       # only top consensus anomalies
 
 # NEW: aggregated report
-AGG_REPORT_FILE = PATH + "/anomaly_aggregate_report.csv"
+AGG_REPORT_FILE = PATH + "/report_anomaly_aggregate.csv"
 
 CSV_SEP     = ";"                                # your sample uses semicolon
 CONTAM      = 0.005                               # expected outlier share

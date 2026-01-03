@@ -29,8 +29,8 @@ start = time.time()
 # ---------------------------
 # Load
 # ---------------------------
-df = read_csv_custom(filePath, nrows=500000)
-df = df.sample(n=100000)
+df = read_csv_custom(filePath, nrows=500)
+df = df.sample(n=50)
 
 # ---------------------------
 # Preserve label early (guarantee it won't disappear)
@@ -95,14 +95,14 @@ X_tx, tx_feat_names, _ = pre_model_prep(tx_for_model)
 today = datetime.now().strftime("%Y-%m-%d")
 out_dir = Path(output_dir)
 
-acc.to_csv(out_dir / f"account_features_{today}.csv", sep=csv_sep, index=False)
-tx_model.to_csv(out_dir / f"tx_with_sender_receiver_features_{today}.csv", sep=csv_sep, index=False)
+acc.to_csv(out_dir / f"account_features.csv", sep=csv_sep, index=False)
+tx_model.to_csv(out_dir / f"tx_with_sender_receiver_features.csv", sep=csv_sep, index=False)
 
 pd.DataFrame(X_acc, columns=acc_feat_names).to_csv(
-    out_dir / f"acc_pre_model_{today}.csv", sep=csv_sep, index=False
+    out_dir / f"acc_pre_model.csv", sep=csv_sep, index=False
 )
 pd.DataFrame(X_tx, columns=tx_feat_names).to_csv(
-    out_dir / f"tx_pre_model_with_account_context_pre_model_{today}.csv",
+    out_dir / f"tx_pre_model_with_account_context_pre_model.csv",
     sep=csv_sep,
     index=False,
 )
