@@ -29,8 +29,8 @@ start = time.time()
 # ---------------------------
 # Load
 # ---------------------------
-df = read_csv_custom(filePath, nrows=5000)
-df = df.sample(n=500)
+df = read_csv_custom(filePath, nrows=500000)
+df = df.sample(n=100000)
 
 # ---------------------------
 # Preserve label early (guarantee it won't disappear)
@@ -107,9 +107,9 @@ pd.DataFrame(X_tx, columns=tx_feat_names).to_csv(
     index=False,
 )
 
-print("Execution time:", time.time() - start, "seconds")
-print("Output dir:", out_dir)
+print("\nExecution time:", time.time() - start, "seconds")
+print("\nOutput dir:", out_dir)
 print(f"Has '{LABEL_COL}' in tx_model?", LABEL_COL in tx_model.columns)
 if LABEL_COL in tx_model.columns:
-    print("Label distribution (tx_model):")
+    print("\nLabel distribution (tx_model):")
     print(tx_model[LABEL_COL].value_counts(dropna=False).head())

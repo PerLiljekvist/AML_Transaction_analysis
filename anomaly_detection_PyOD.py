@@ -27,7 +27,7 @@ import time
 # ===========================
 start = time.time()
 PATH = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
-INPUT_FILE  = INPUT_FILE =  "/Users/perliljekvist/Documents/Python/IBM_AML/Data/2026-01-02/tx_with_sender_receiver_features_2026-01-02.csv" # <- change me
+INPUT_FILE  = INPUT_FILE =  "/Users/perliljekvist/Documents/Python/IBM_AML/Data/2026-01-03/tx_with_sender_receiver_features_2026-01-03.csv" # <- change me
 OUTPUT_FILE =  PATH + "/tx_with_pyod_anomalies.csv"       # full output
 TOP_FILE    = PATH + "/top_consensus_anomalies.csv"       # only top consensus anomalies
 
@@ -35,7 +35,7 @@ TOP_FILE    = PATH + "/top_consensus_anomalies.csv"       # only top consensus a
 AGG_REPORT_FILE = PATH + "/anomaly_aggregate_report.csv"
 
 CSV_SEP     = ";"                                # your sample uses semicolon
-CONTAM      = 0.01                               # expected outlier share
+CONTAM      = 0.005                               # expected outlier share
 RANDOM_SEED = 42
 
 
@@ -282,8 +282,6 @@ def main():
 
     # 6) Save a small file with the "top" consensus anomalies
     top_consensus = df_out[df_out["consensus_anomaly"]].copy()
-
-    
 
     if not top_consensus.empty:
         # ---- laundering sanity check ----
