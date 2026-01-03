@@ -21,9 +21,11 @@ from paths_and_stuff import *
 import time
 
 
+
 # ===========================
 # Config
 # ===========================
+start = time.time()
 PATH = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
 INPUT_FILE  = INPUT_FILE =  "/Users/perliljekvist/Documents/Python/IBM_AML/Data/2026-01-02/tx_with_sender_receiver_features_2026-01-02.csv" # <- change me
 OUTPUT_FILE =  PATH + "/tx_with_pyod_anomalies.csv"       # full output
@@ -281,6 +283,8 @@ def main():
     # 6) Save a small file with the "top" consensus anomalies
     top_consensus = df_out[df_out["consensus_anomaly"]].copy()
 
+    
+
     if not top_consensus.empty:
         # ---- laundering sanity check ----
         if "Is Laundering" in top_consensus.columns:
@@ -317,6 +321,7 @@ def main():
     else:
         print("No consensus anomalies (>=2 algos) found; not writing top file.")
 
+    print("\nExecution time:", time.time() - start, "seconds")
 
 if __name__ == "__main__":
     main()
