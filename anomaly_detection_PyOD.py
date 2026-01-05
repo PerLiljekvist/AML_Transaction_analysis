@@ -27,7 +27,7 @@ import time
 # ===========================
 start = time.time()
 PATH = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
-INPUT_FILE  = PATH + "/tx_with_sender_receiver_features.csv" # <- change me
+INPUT_FILE  = PATH + "/tx_pre_model_with_account_context_pre_model.csv" # <- change me
 OUTPUT_FILE =  PATH + "/tx_with_pyod_anomalies.csv"       # full output
 TOP_FILE    = PATH + "/report_top_consensus_anomalies.csv"       # only top consensus anomalies
 
@@ -83,7 +83,7 @@ def run_pyod_ensemble(
             "To Bank",
             "Account.1",
             "Receiving Currency",
-            #"Is Laundering",  # label; don't use when fitting unsupervised models
+            "Is Laundering",  # label; don't use when fitting unsupervised models
         }
         feature_cols = [c for c in d.columns if c not in non_features]
 

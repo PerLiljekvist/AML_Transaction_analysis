@@ -1,7 +1,10 @@
+#!/usr/bin/env python3
 # run_feature_build.py
+
 import time
 from pathlib import Path
 from datetime import datetime
+
 import pandas as pd
 import numpy as np
 
@@ -21,26 +24,32 @@ from new_anomaly_detection_feature_engineering import (
     attach_sender_receiver_features,
 )
 
+# ===========================
+# Config
+# ===========================
 csv_sep = ";"
 output_dir = create_new_folder(folderPath, datetime.now().strftime("%Y-%m-%d"))
+
+# Label column to preserve for evaluation (NOT used in modeling features)
+LABEL_COL = "Is Laundering"
 
 start = time.time()
 
 # ---------------------------
 # Load
 # ---------------------------
-df = read_csv_custom(filePath, nrows=500)
-df = df.sample(n=50)
+df = read_csv_custom(filePath, nrows=5000)
+df = df.sample(n=500)
 
 # ---------------------------
 # Preserve label early (guarantee it won't disappear)
 # ---------------------------
-LABEL_COL = "Is Laundering"
 label_series = None
 if LABEL_COL in df.columns:
-    # keep as 0/1 numeric if possible; fallback to 0 for missing
+    # Keep as 0/1 numeric if possible; fallback to 0 for missing
     label_series = pd.to_numeric(df[LABEL_COL], errors="coerce").fillna(0).astype("uint8")
 
+# Basic casts / sanitation (in-place)
 apply_basic_casts_inplace(df)
 
 # ---------------------------
@@ -92,24 +101,43 @@ X_tx, tx_feat_names, _ = pre_model_prep(tx_for_model)
 # ---------------------------
 # Exports
 # ---------------------------
-today = datetime.now().strftime("%Y-%m-%d")
 out_dir = Path(output_dir)
 
-acc.to_csv(out_dir / f"account_features.csv", sep=csv_sep, index=False)
-tx_model.to_csv(out_dir / f"tx_with_sender_receiver_features.csv", sep=csv_sep, index=False)
+# Raw-ish feature tables (label is preserved in tx_model if present)
+acc.to_csv(out_dir / "account_features.csv", sep=csv_sep, index=False)
+tx_model.to_csv(out_dir / "tx_with_sender_receiver_features.csv", sep=csv_sep, index=False)
 
+# Pure model matrices
 pd.DataFrame(X_acc, columns=acc_feat_names).to_csv(
-    out_dir / f"acc_pre_model.csv", sep=csv_sep, index=False
+    out_dir / "acc_pre_model.csv", sep=csv_sep, index=False
 )
-pd.DataFrame(X_tx, columns=tx_feat_names).to_csv(
-    out_dir / f"tx_pre_model_with_account_context_pre_model.csv",
+
+# TX pre-model export WITH label appended (but label was NOT used in pre_model_prep)
+tx_pre_model_df = pd.DataFrame(X_tx, columns=tx_feat_names)
+
+if LABEL_COL in tx_model.columns:
+    tx_pre_model_df[LABEL_COL] = (
+        pd.to_numeric(tx_model[LABEL_COL], errors="coerce").fillna(0).astype("uint8").values
+    )
+elif label_series is not None:
+    tx_pre_model_df[LABEL_COL] = label_series.values
+
+tx_pre_model_df.to_csv(
+    out_dir / "tx_pre_model_with_account_context_pre_model.csv",
     sep=csv_sep,
     index=False,
 )
 
 print("\nExecution time:", time.time() - start, "seconds")
 print("\nOutput dir:", out_dir)
-print(f"Has '{LABEL_COL}' in tx_model?", LABEL_COL in tx_model.columns)
+
+print(f"\nHas '{LABEL_COL}' in tx_model?", LABEL_COL in tx_model.columns)
 if LABEL_COL in tx_model.columns:
     print("\nLabel distribution (tx_model):")
     print(tx_model[LABEL_COL].value_counts(dropna=False).head())
+
+print(f"\nHas '{LABEL_COL}' in tx_pre_model_with_account_context_pre_model.csv?",
+      LABEL_COL in tx_pre_model_df.columns)
+if LABEL_COL in tx_pre_model_df.columns:
+    print("\nLabel distribution (tx_pre_model_df):")
+    print(tx_pre_model_df[LABEL_COL].value_counts(dropna=False).head())

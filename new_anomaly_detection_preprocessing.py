@@ -37,7 +37,6 @@ def apply_basic_casts_inplace(df: pd.DataFrame) -> None:
             df[col] = df[col].astype(str)
 
 
-
 def one_hot_encode_inplace(
     df: pd.DataFrame,
     col: str,
@@ -65,7 +64,7 @@ def clean_numeric_inplace(df: pd.DataFrame) -> None:
 
 def pre_model_prep(
     df: pd.DataFrame,
-    id_like=("Account", "Account.1", "From Bank", "To Bank", "Timestamp", "Is Laundering"),
+    id_like=("Account", "Account.1", "From Bank", "To Bank", "Timestamp"),
     nan_flag_cols=("entropy_out_amt", "entropy_in_amt", "HHI_out", "HHI_in", "unique_receivers", "unique_senders"),
     impute_zero_if=("entropy", "HHI"),
     log1p_cols=("total_out_amt", "total_in_amt", "max_out_amt", "max_in_amt", "net_flow_amt", "Amount Paid", "Amount Received"),
