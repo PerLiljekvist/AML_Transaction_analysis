@@ -38,8 +38,8 @@ start = time.time()
 # ---------------------------
 # Load
 # ---------------------------
-df = read_csv_custom(filePath, nrows=5000)
-df = df.sample(n=500)
+df = read_csv_custom(filePath, nrows=2000)
+df = df.sample(n=100)
 
 # ---------------------------
 # Preserve label early (guarantee it won't disappear)
