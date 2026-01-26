@@ -23,20 +23,11 @@ df = df.head(1000)
 # print(df.info())
 # quit()
 
-fig, axes = plt.subplots(2, 2, figsize=(15, 5))
+fig, axes = plt.subplots(1, 2, figsize=(15, 5))
 fig.suptitle("Anomaly output lab")
 
-sns.histplot(data=df, x="iforest_score", ax=axes[0,0], kde=True)
-#axes[0,1].set_title("iforest_score")
-
-sns.histplot(data=df, x="lof_score", ax=axes[0,1], kde=True)
-#axes[0,1].set_title("lof_score")
-
-sns.boxplot(data=df, x="iforest_score", ax=axes[1,0])
-#axes[1,0].set_title("iforest_score")
-
-sns.boxplot(data=df, x="lof_score", ax=axes[1,1])
-#axes[1,1].set_title("lof_score")
+sns.histplot(data=df, x="iforest_score", ax=axes[0], kde=True)
+sns.boxplot(data=df, x="iforest_score", ax=axes[1])
 
 plt.tight_layout()
 plt.show()
